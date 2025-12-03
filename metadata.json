@@ -1,0 +1,5 @@
+{
+  "name": "移动端POE",
+  "description": "A vertical H5 mobile game with a virtual joystick, smooth camera follow, and infinite grid background.",
+  "requestFramePermissions": []
+}
