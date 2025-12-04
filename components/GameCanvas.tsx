@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
@@ -362,8 +363,17 @@ export const GameCanvas: React.FC = () => {
       setTouchStart(null);
   };
 
-  const getAbbreviation = (name: string) => {
-    // If name is translated, it might not have spaces. Just take first 3 chars.
+  const getAbbreviation = (name: string, item?: ItemInstance) => {
+    // If translated, abbreviations might differ.
+    // For now, if item is passed and has a gemDefinitionId, use translation logic
+    if (item && item.type === 'gem' && item.gemDefinitionId) {
+        const translatedName = t(`skill_${item.gemDefinitionId}_name`, language);
+        return language === 'zh' ? translatedName.substring(0, 2) : translatedName.substring(0, 3);
+    }
+    
+    // For equipment, maybe just first few chars of name? 
+    // Hard to map dynamic names back to abbreviations without complex logic.
+    // Fallback to existing logic:
     if (language === 'zh') return name.substring(0, 2);
     const parts = name.split(" ");
     return parts.length > 1 ? parts[parts.length-1].substring(0, 3) : name.substring(0, 3);
@@ -394,7 +404,7 @@ export const GameCanvas: React.FC = () => {
             {!item && <span className="text-[10px] text-neutral-600 uppercase font-bold tracking-widest">{t(`item_${slot}` as any, language).substring(0, 3)}</span>}
             {item && (
                 <div className={`text-xs sm:text-sm font-bold text-center leading-none ${textColor} drop-shadow-md break-all px-1`}>
-                    {getAbbreviation(item.name)}
+                    {getAbbreviation(item.name, item)}
                 </div>
             )}
         </div>
@@ -429,7 +439,7 @@ export const GameCanvas: React.FC = () => {
              {item ? (
                  <>
                      <span className={`text-white font-bold text-xs drop-shadow-md text-center leading-none px-1 ${!isCompatible ? 'line-through decoration-red-500' : ''}`}>
-                         {getAbbreviation(item.name)}
+                         {getAbbreviation(item.name, item)}
                      </span>
                      {!isCompatible && (
                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm">!</div>
@@ -499,6 +509,11 @@ export const GameCanvas: React.FC = () => {
 
         {/* HUD - Buttons */}
         <div className="absolute top-3 right-3 z-20 flex gap-2">
+             {hudState.waveName !== 'HIDEOUT' && (
+                 <button onClick={() => engineRef.current?.returnToHideout()} className="bg-black/80 hover:bg-red-900/80 text-red-500 border border-red-700/50 font-serif font-bold py-1.5 px-3 rounded shadow-lg active:scale-95 transition-all text-[10px] tracking-wider">
+                    🏠 EXIT
+                 </button>
+             )}
              <button onClick={handleToggleSkills} className="bg-black/80 hover:bg-neutral-800 text-cyan-500 border border-cyan-700/50 font-serif font-bold py-1.5 px-3 rounded shadow-lg active:scale-95 transition-all text-[10px] tracking-wider">
                 {t('ui_skills', language)}
              </button>
@@ -563,10 +578,10 @@ export const GameCanvas: React.FC = () => {
                  <h2 className="text-xl font-serif text-zinc-300 mb-2 tracking-widest">LINK GEM</h2>
                  <div className="flex items-center gap-2 mb-8 bg-zinc-900 p-3 rounded-lg border border-zinc-700">
                      <div className="w-10 h-10 bg-zinc-800 border-2 border-zinc-500 rounded-full flex items-center justify-center text-white font-bold text-xs">
-                         {getAbbreviation(pendingGem.name)}
+                         {getAbbreviation(pendingGem.name, pendingGem)}
                      </div>
                      <div className="flex flex-col">
-                        <span className="text-white font-bold text-sm">{pendingGem.name}</span>
+                        <span className="text-white font-bold text-sm">{t(`skill_${pendingGem.gemDefinitionId}_name`, language)}</span>
                         <span className="text-zinc-500 text-[10px]">Select an active skill to support</span>
                      </div>
                  </div>
@@ -595,7 +610,7 @@ export const GameCanvas: React.FC = () => {
                              >
                                  <div className="text-2xl mb-1">{hasActive ? '💠' : '❌'}</div>
                                  <span className="text-[10px] font-bold text-white">
-                                     {hasActive ? getAbbreviation(skill.activeGem!.name) : 'Empty'}
+                                     {hasActive ? getAbbreviation(skill.activeGem!.name, skill.activeGem!) : 'Empty'}
                                  </span>
                                  {hasActive && !compatible && (
                                      <span className="absolute -top-2 -right-2 bg-red-600 text-[8px] px-1 rounded text-white">Incompatible</span>
@@ -743,7 +758,7 @@ export const GameCanvas: React.FC = () => {
                                     <h3 className="text-purple-400 font-bold border-b border-purple-900 pb-1 mb-2 text-sm">{selectedMap.name}</h3>
                                     {selectedMap.affixes.map((affix, i) => (
                                         <div key={i} className="text-xs text-zinc-300 flex justify-between">
-                                            <span>{affix.name.replace('of ', '')}</span>
+                                            <span>{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
                                             <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
                                                 {Math.round(affix.value * 100)}%
                                             </span>
@@ -756,15 +771,14 @@ export const GameCanvas: React.FC = () => {
                         </div>
 
                         <button 
-                            disabled={!selectedMap}
-                            onClick={handleActivateMap}
+                            onClick={selectedMap ? handleActivateMap : () => { engineRef.current?.activateFreeRun(); handleCloseMapDevice(); }}
                             className={`w-full py-4 font-serif font-bold tracking-widest text-lg rounded shadow-lg transition-all
                                 ${selectedMap 
                                     ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_15px_rgba(147,51,234,0.4)]' 
-                                    : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+                                    : 'bg-green-700 hover:bg-green-600 text-green-100 shadow-[0_0_15px_rgba(21,128,61,0.4)]'
                                 }`}
                         >
-                            ACTIVATE
+                            {selectedMap ? "ACTIVATE" : "FREE RUN (T1)"}
                         </button>
                     </div>
                      {/* Inventory Strip */}
@@ -806,7 +820,7 @@ export const GameCanvas: React.FC = () => {
                             {Array.from({ length: MAX_SKILL_SLOTS }).map((_, i) => {
                                 const skill = engineRef.current!.gameState.activeSkills[i];
                                 const isSelected = selectedSlotIndex === i;
-                                const activeName = skill.activeGem ? getAbbreviation(skill.activeGem.name) : (i + 1).toString();
+                                const activeName = skill.activeGem ? getAbbreviation(skill.activeGem.name, skill.activeGem) : (i + 1).toString();
                                 const activeColor = skill.activeGem ? "text-cyan-400 border-cyan-700" : "text-zinc-600 border-zinc-700";
                                 const bg = isSelected ? "bg-zinc-800 ring-1 ring-cyan-500" : "bg-zinc-950";
 
@@ -860,7 +874,7 @@ export const GameCanvas: React.FC = () => {
                                 return (
                                     <div className="mt-8 bg-zinc-900/80 border border-zinc-700 rounded p-3 text-xs font-mono w-full max-w-sm">
                                         <div className="flex justify-between text-cyan-300 font-bold mb-1">
-                                            <span>{resolved.definition.name}</span>
+                                            <span>{t(`skill_${resolved.definition.id}_name`, language)}</span>
                                             <span>DPS: {Math.round(resolved.stats.damage * resolved.stats.attackRate)}</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400">
@@ -1052,7 +1066,7 @@ export const GameCanvas: React.FC = () => {
                                             {item.type === 'map' ? (
                                                 <span className="text-xl">📜</span>
                                             ) : (
-                                                <span className={`text-[10px] font-bold ${textColor}`}>{getAbbreviation(item.name)}</span>
+                                                <span className={`text-[10px] font-bold ${textColor}`}>{getAbbreviation(item.name, item)}</span>
                                             )}
                                             {showMerchant && (
                                                 <span className="absolute bottom-1 right-1 text-[8px] text-green-500 font-bold">$</span>
@@ -1075,7 +1089,11 @@ export const GameCanvas: React.FC = () => {
             >
                 <div className="bg-zinc-950 border border-neutral-600 p-3 rounded shadow-2xl relative w-full break-words whitespace-normal">
                     <div className={`font-bold border-b border-neutral-700 pb-1 mb-1 text-sm ${tooltip.item.rarity === 'unique' ? 'text-orange-400' : tooltip.item.rarity === 'rare' ? 'text-yellow-300' : tooltip.item.rarity === 'magic' ? 'text-blue-300' : 'text-gray-200'}`}>
-                        {tooltip.item.name}
+                        {/* Dynamic Name Construction (Simplified) or Fallback */}
+                        {tooltip.item.type === 'gem' 
+                            ? t(`skill_${tooltip.item.gemDefinitionId}_name`, language)
+                            : tooltip.item.name // Equipment names are hard to fully dynamicize without major refactor, keeping english for now
+                        }
                     </div>
                     {tooltip.item.type === 'gem' ? (
                         <div className="text-xs text-zinc-400">
@@ -1085,7 +1103,7 @@ export const GameCanvas: React.FC = () => {
                                      ⚠ INVALID SUPPORT
                                  </div>
                              )}
-                             <div className="text-zinc-300 mb-2">{SKILL_DATABASE[tooltip.item.gemDefinitionId!]?.description}</div>
+                             <div className="text-zinc-300 mb-2">{t(`skill_${tooltip.item.gemDefinitionId}_desc`, language)}</div>
                              <div className="text-[10px] text-zinc-500">Tags: {SKILL_DATABASE[tooltip.item.gemDefinitionId!]?.tags.join(", ")}</div>
                         </div>
                     ) : tooltip.item.type === 'map' ? (
@@ -1093,7 +1111,7 @@ export const GameCanvas: React.FC = () => {
                             <div className="text-[10px] text-zinc-500 mb-2 italic">{t('lbl_map_tier', language, {n: tooltip.item.level})}</div>
                             {tooltip.item.affixes.map((affix, i) => (
                                 <div key={i} className="text-blue-200 text-xs flex justify-between items-start gap-1">
-                                    <span className="text-left flex-1">{affix.name}</span>
+                                    <span className="text-left flex-1">{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
                                     <div className="text-right whitespace-nowrap">
                                         <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
                                             {Math.round(affix.value * 100)}%
@@ -1134,11 +1152,26 @@ export const GameCanvas: React.FC = () => {
                                         ? "border-b border-zinc-700 pb-2 mb-2" 
                                         : "";
                                     
+                                    // Translate Affix Name
+                                    // Logic: strip prefix_ / suffix_ / implicit_ and try to find key
+                                    let affixKey = affix.definitionId;
+                                    affixKey = affixKey.replace('prefix_', '').replace('suffix_', '').replace('implicit_', '');
+                                    // Special case handling or fallback
+                                    let affixName = t(`affix_${affixKey}`, language);
+                                    if (affixName.startsWith('affix_')) affixName = affix.name; // Fallback to raw name if translation missing
+
+                                    // Special handling for Implicit (Base Property)
+                                    if (affix.definitionId.includes('implicit')) {
+                                         // Implicit names are often hardcoded stats names in english e.g. "Physical Damage"
+                                         // We can map known implicits or just use raw name for now as they are simple
+                                         affixName = affix.name; 
+                                    }
+
                                     return (
                                         <div key={i} className={`${containerClass}`}>
                                             {isImplicit && <div className="text-[9px] text-zinc-500 mb-0.5">{t('lbl_implicit', language)}</div>}
                                             <div className={`${textColor} text-xs flex justify-between items-start gap-1`}>
-                                                <span className="text-left flex-1">{affix.name}</span>
+                                                <span className="text-left flex-1">{affixName}</span>
                                                 <div className="text-right whitespace-nowrap">
                                                     <span className="text-white font-mono">+{affix.value}{affix.valueType === 'increased' ? '%' : ''}</span>
                                                     {diffElement}
@@ -1173,16 +1206,54 @@ export const GameCanvas: React.FC = () => {
                 <div className="w-full max-w-sm p-6 flex flex-col items-center">
                     <h2 className="text-3xl font-serif text-yellow-500 tracking-widest mb-8 text-shadow">LEVEL UP</h2>
                     <div className="grid gap-4 w-full">
-                        {upgradeState.options.map((option, idx) => (
-                            <button key={idx} onClick={() => handleSelectUpgrade(option)} className={`relative overflow-hidden group w-full p-4 border border-white/10 bg-zinc-900 hover:bg-zinc-800 hover:border-yellow-500/50 active:scale-95 transition-all shadow-xl text-left flex flex-col gap-1`}>
-                                <div className={`absolute top-0 left-0 w-1 h-full ${option.color}`}></div>
-                                <span className="text-gray-200 font-serif font-bold text-lg uppercase tracking-wide ml-2">{option.name}</span>
-                                <span className="text-gray-500 text-xs font-mono ml-2">{option.description}</span>
-                                {option.gemItem && (
-                                     <span className="text-cyan-400 text-[10px] font-bold ml-2">GEM CARD</span>
-                                )}
-                            </button>
-                        ))}
+                        {upgradeState.options.map((option, idx) => {
+                            // Translate Option Name and Desc
+                            let name = option.name;
+                            let desc = option.description;
+
+                            if (option.gemItem) {
+                                name = t(`skill_${option.gemItem.gemDefinitionId}_name`, language);
+                                desc = t(`skill_${option.gemItem.gemDefinitionId}_desc`, language);
+                            } else {
+                                // Stat upgrade
+                                name = t(`upg_${option.id.split('_')[0]}_name`, language); // Split uuid if present?
+                                // Actually upgrades from ItemSystem might be cloned with new IDs. 
+                                // We need the definition ID. But `generateRewards` clones them. 
+                                // HACK: We can match by English name or just rely on the ID being 'multishot' etc before cloning?
+                                // `generateRewards` does: { ...stat, id: uuid() }. The original ID is lost.
+                                // FIX: We should rely on `stat` type or match by name, but name is English.
+                                // Let's use the `stat` field + value to identify? No.
+                                // In `STAT_UPGRADES` list, id is `multishot`. 
+                                // Let's try to recover it: `name` is unique enough? 
+                                // Better: Upgrades in `ItemSystem` should probably keep a `refId` or similar.
+                                // For now, let's map by known English Names or just skip translation for Stat Upgrades if ID is random.
+                                // Wait, `generateRewards` clones `stat` object. If `id` is overwritten, we lose it. 
+                                // BUT `generateRewards` code: `rewards.push({ ...stat, id: uuid() });`
+                                // We lost the original key. 
+                                // RECOVERY: Let's use `name` to lookup key in reverse? Or just display english for stats for now.
+                                // OR: We can change `ItemSystem` to not overwrite ID? No, ID needs to be unique for keys.
+                                // Let's try to map English Name -> Key for now.
+                                if (option.name === 'Multi-Shot') { name = t('upg_multishot_name', language); desc = t('upg_multishot_desc', language); }
+                                if (option.name === 'Haste') { name = t('upg_haste_name', language); desc = t('upg_haste_desc', language); }
+                                if (option.name === 'Giant') { name = t('upg_giant_name', language); desc = t('upg_giant_desc', language); }
+                                if (option.name === 'Swift') { name = t('upg_swift_name', language); desc = t('upg_swift_desc', language); }
+                                if (option.name === 'Vitality') { name = t('upg_vitality_name', language); desc = t('upg_vitality_desc', language); }
+                                if (option.name === 'Precision') { name = t('upg_precision_name', language); desc = t('upg_precision_desc', language); }
+                                if (option.name === 'Iron Skin') { name = t('upg_iron_skin_name', language); desc = t('upg_iron_skin_desc', language); }
+                                if (option.name === 'Troll Blood') { name = t('upg_regen_name', language); desc = t('upg_regen_desc', language); }
+                            }
+
+                            return (
+                                <button key={idx} onClick={() => handleSelectUpgrade(option)} className={`relative overflow-hidden group w-full p-4 border border-white/10 bg-zinc-900 hover:bg-zinc-800 hover:border-yellow-500/50 active:scale-95 transition-all shadow-xl text-left flex flex-col gap-1`}>
+                                    <div className={`absolute top-0 left-0 w-1 h-full ${option.color}`}></div>
+                                    <span className="text-gray-200 font-serif font-bold text-lg uppercase tracking-wide ml-2">{name}</span>
+                                    <span className="text-gray-500 text-xs font-mono ml-2">{desc}</span>
+                                    {option.gemItem && (
+                                        <span className="text-cyan-400 text-[10px] font-bold ml-2">GEM CARD</span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             </div>

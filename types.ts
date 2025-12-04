@@ -35,6 +35,18 @@ export interface Particle {
     size: number;
 }
 
+export type XPOrbTier = 'blue' | 'purple' | 'pink' | 'gold';
+
+export interface XPOrb {
+    id: number;
+    active: boolean;
+    x: number;
+    y: number;
+    value: number;
+    magnetized: boolean;
+    tier: XPOrbTier;
+}
+
 // --- NPC SYSTEM ---
 export type NpcType = 'merchant' | 'blacksmith';
 
@@ -90,6 +102,7 @@ export interface Bullet extends Entity {
   hitIds: number[];
   damageType: DamageType; 
   damage?: number; 
+  pierce: number;
 }
 
 // --- GROUND EFFECTS ---
@@ -278,4 +291,5 @@ export interface GameState {
   // Ground Effects & Particles
   groundEffects: GroundEffect[];
   particles: Particle[];
+  xpOrbs: XPOrb[];
 }

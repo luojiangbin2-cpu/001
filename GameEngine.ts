@@ -1,5 +1,4 @@
-
-import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle } from './types';
+import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
 import { SkillManager, SKILL_DATABASE } from './SkillSystem';
@@ -18,7 +17,7 @@ const ASSETS: { [key: string]: string } = {
 
 // --- Configs & Constants ---
 export const BACKPACK_CAPACITY = 100;
-export const CAMERA_ZOOM = 0.6;
+export const CAMERA_ZOOM = 0.5; // Zoom out to see more
 const PLAYER_SIZE = 40; 
 const PLAYER_COLOR = '#3b82f6';
 const SPEED_SCALAR = 60; 
@@ -27,8 +26,9 @@ const ELITE_COLOR = '#facc15';
 const BULLET_BOSS_COLOR = '#dc2626';
 
 const XP_PER_ENEMY = 10; 
-const BASE_XP_TO_LEVEL = 50; 
+const BASE_XP_TO_LEVEL = 150; 
 const MAX_ENEMIES_POOL_SIZE = 150; 
+const MAX_XP_ORBS = 300; 
 
 const BULLET_LIFETIME = 2.0; 
 const MAX_BULLETS = 300; 
@@ -130,6 +130,7 @@ export class GameEngine {
     loot: Loot[] = [];
     floatingTexts: FloatingText[] = [];
     visualEffects: VisualEffect[] = [];
+    xpOrbs: XPOrb[] = [];
 
     // Loop
     timers = { currentFps: 0, frames: 0, fpsUpdate: 0 };
@@ -255,7 +256,8 @@ export class GameEngine {
             currentMaxEnemies: 20,
             expeditionActive: false,
             groundEffects: [],
-            particles: []
+            particles: [],
+            xpOrbs: []
         };
     }
 
@@ -268,7 +270,8 @@ export class GameEngine {
             playerInvulnerabilityTimer: 0,
             velocity: {x:0, y:0},
             groundEffects: [], // Don't save transient ground effects
-            particles: [] // Don't save transient particles
+            particles: [], // Don't save transient particles
+            xpOrbs: [] // Don't save orbs
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(stateToSave));
     }
@@ -283,6 +286,7 @@ export class GameEngine {
             if (!parsed.npcs) parsed.npcs = [];
             if (!parsed.groundEffects) parsed.groundEffects = [];
             if (!parsed.particles) parsed.particles = [];
+            if (!parsed.xpOrbs) parsed.xpOrbs = [];
             
             // Re-inject NPCs if in hideout
             if (parsed.worldState === 'HIDEOUT') {
@@ -328,7 +332,7 @@ export class GameEngine {
         for (let i = 0; i < MAX_ENEMIES_POOL_SIZE; i++) {
             this.enemies.push({ 
                 id: i, active: false, x: 0, y: 0, width: 0, height: 0, color: ENEMY_COLOR, 
-                hp: 0, speed: 0, type: 'basic', maxHp: 0, attackTimer: 0,
+                hp: 0, speed: 0, type: 'basic', maxHp: 0, attackTimer: undefined,
                 modifiers: [], isElite: false,
                 resistances: { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 }
             });
@@ -336,7 +340,7 @@ export class GameEngine {
         for (let i = 0; i < MAX_BULLETS; i++) {
             this.bullets.push({ 
                 id: i, active: false, x: 0, y: 0, width: 0, height: 0, color: '#000', 
-                vx: 0, vy: 0, lifeTime: 0, owner: 'player', hitIds: [], damageType: 'physical'
+                vx: 0, vy: 0, lifeTime: 0, owner: 'player', hitIds: [], damageType: 'physical', pierce: 0
             });
         }
         
@@ -354,6 +358,12 @@ export class GameEngine {
         for (let i = 0; i < FLOATING_TEXT_POOL_SIZE; i++) {
             this.floatingTexts.push({
                 id: i, active: false, x: 0, y: 0, text: '', color: 'white', lifeTime: 0, velocityY: 0, scale: 1
+            });
+        }
+
+        for (let i = 0; i < MAX_XP_ORBS; i++) {
+            this.xpOrbs.push({
+                id: i, active: false, x: 0, y: 0, value: 0, magnetized: false, tier: 'blue'
             });
         }
 
@@ -559,6 +569,7 @@ export class GameEngine {
         this.enemies.forEach(e => e.active = false);
         this.bullets.forEach(b => b.active = false);
         this.loot.forEach(l => l.active = false);
+        this.xpOrbs.forEach(o => o.active = false);
         this.gameState.groundEffects = [];
         this.gameState.interactables = [];
         this.gameState.npcs = []; // Clear NPCs in run
@@ -567,6 +578,11 @@ export class GameEngine {
         this.callbacks.onNotification(`Expedition Started: Floor 1`);
         this.saveGame();
         this.updateHud();
+    }
+
+    public activateFreeRun() {
+        const freeMap = generateItem('map', 1, 'normal');
+        this.activateMap(freeMap);
     }
 
     private enterNextFloor() {
@@ -583,6 +599,7 @@ export class GameEngine {
         this.enemies.forEach(e => e.active = false);
         this.bullets.forEach(b => b.active = false);
         this.loot.forEach(l => l.active = false); 
+        this.xpOrbs.forEach(o => o.active = false);
         this.gameState.groundEffects = [];
         this.gameState.interactables = [];
         this.gameState.particles = [];
@@ -610,6 +627,7 @@ export class GameEngine {
         this.enemies.forEach(e => e.active = false);
         this.bullets.forEach(b => b.active = false);
         this.loot.forEach(l => l.active = false);
+        this.xpOrbs.forEach(o => o.active = false);
         this.gameState.groundEffects = [];
         this.gameState.particles = [];
         this.gameState.expeditionActive = false;
@@ -970,8 +988,8 @@ export class GameEngine {
 
         this.gameState.level += 1;
         this.gameState.xp -= this.gameState.nextLevelXp;
-        // Updated XP Curve: 50 * (1.2 ^ (Level - 1))
-        this.gameState.nextLevelXp = Math.floor(50 * Math.pow(1.2, this.gameState.level - 1));
+        // Steep XP Curve: 150 * (1.25 ^ (Level - 1))
+        this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
         
         this.gameState.isPaused = false;
         this.gameState.lastFrameTime = performance.now();
@@ -1004,11 +1022,42 @@ export class GameEngine {
     }
 
     private gainXp(amount: number) {
-        this.gameState.xp += amount;
+        // Level Gap Penalty Logic
+        let penaltyMultiplier = 1.0;
+        // Default Tier 1 if hideout or unknown
+        const mapTier = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1; 
+        const playerLevel = this.gameState.level;
+        
+        // If Player is significantly higher than map tier
+        if (playerLevel > mapTier + 3) {
+            // Severe Penalty: (MapTier / PlayerLevel) ^ 4
+            penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
+        }
+
+        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier));
+        
+        this.gameState.xp += effectiveXp;
         if (this.gameState.xp >= this.gameState.nextLevelXp) {
             this.triggerLevelUp();
         } else {
             this.updateHud();
+        }
+    }
+
+    private spawnXPOrb(x: number, y: number, value: number) {
+        const orb = this.xpOrbs.find(o => !o.active);
+        if (orb) {
+            orb.active = true;
+            orb.x = x + (Math.random() - 0.5) * 20;
+            orb.y = y + (Math.random() - 0.5) * 20;
+            orb.value = value;
+            orb.magnetized = false;
+            
+            // Tier Logic
+            if (value >= 500) orb.tier = 'gold';
+            else if (value >= 150) orb.tier = 'pink';
+            else if (value >= 50) orb.tier = 'purple';
+            else orb.tier = 'blue';
         }
     }
 
@@ -1145,13 +1194,13 @@ export class GameEngine {
             // Increased Attack Delay: Boss 2.0 -> 2.4
             enemy.attackTimer = 2.4;
             this.callbacks.onNotification("BOSS SPAWNED!");
-        } else if (enemy.modifiers.includes('extra_proj') && type === 'tank') {
-            // Increased Attack Delay: Tank 3.0 -> 3.6
-            enemy.attackTimer = 3.6;
+        } else {
+            // Ensure non-bosses don't have an attack timer
+            enemy.attackTimer = undefined;
         }
     }
 
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number) {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0) {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -1167,6 +1216,7 @@ export class GameEngine {
         bullet.hitIds = [];
         bullet.damageType = damageType;
         bullet.damage = damage;
+        bullet.pierce = pierce;
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1220,11 +1270,21 @@ export class GameEngine {
         let nearest: Enemy | null = null;
         let minDistSq = Infinity;
         
+        // VISUAL RANGE TARGETING
+        // Visual radius is canvas half-width / zoom + margin.
+        // Assuming typical mobile width ~400px (though canvas width varies)
+        const canvasWidth = this.canvas ? this.canvas.width : 400;
+        const visualRadius = (canvasWidth / 2) / CAMERA_ZOOM + 100; // 100px buffer
+        const visualRadiusSq = visualRadius * visualRadius;
+
         for (const enemy of this.enemies) {
           if (!enemy.active) continue;
           const cx = enemy.x + enemy.width/2;
           const cy = enemy.y + enemy.height/2;
           const distSq = (cx - px)**2 + (cy - py)**2;
+          
+          if (distSq > visualRadiusSq) continue; // Skip off-screen enemies
+
           if (distSq < minDistSq) { minDistSq = distSq; nearest = enemy; }
         }
 
@@ -1254,7 +1314,7 @@ export class GameEngine {
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
 
             for (let i = 0; i < safeCount; i++) {
-                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType);
+                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, 0);
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -1277,14 +1337,24 @@ export class GameEngine {
         const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
         const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
         
+        // VISUAL RANGE TARGETING for Basic Attack
+        const canvasWidth = this.canvas ? this.canvas.width : 400;
+        const visualRadius = (canvasWidth / 2) / CAMERA_ZOOM + 100; 
+        const visualRadiusSq = visualRadius * visualRadius;
+
         for (const enemy of this.enemies) {
           if (!enemy.active) continue;
           const cx = enemy.x + enemy.width/2;
           const cy = enemy.y + enemy.height/2;
           const distSq = (cx - px)**2 + (cy - py)**2;
+
+          if (distSq > visualRadiusSq) continue; // Skip off-screen
+
           if (distSq < minDistSq) { minDistSq = distSq; nearest = enemy; }
         }
 
+        // Keep 400 range max limit if desired, or let visual range handle it.
+        // Keeping legacy logic constraint:
         if (nearest && minDistSq > 400 * 400) nearest = null;
 
         if (!this.joystickState.active && !nearest) return;
@@ -1304,7 +1374,7 @@ export class GameEngine {
         const startAngle = angle - ((count - 1) * spreadRad) / 2;
 
         for (let i = 0; i < count; i++) {
-            this.spawnBullet(px, py, startAngle + i * spreadRad, 'player', speed, 12, '#93c5fd', 'physical', dmg);
+            this.spawnBullet(px, py, startAngle + i * spreadRad, 'player', speed, 12, '#93c5fd', 'physical', dmg, 0);
         }
     }
 
@@ -1380,12 +1450,25 @@ export class GameEngine {
 
          if (e.hp <= 0) {
             e.active = false;
+            
+            // Dynamic XP Calculation
+            let typeMult = 1;
+            if (e.type === 'fast') typeMult = 1.2;
+            else if (e.type === 'tank') typeMult = 3.0;
+            else if (e.type === 'boss') typeMult = 50.0;
+
+            let eliteMult = e.isElite ? 5.0 : 1.0;
+            const mapMult = this.gameState.currentMapStats.xpMult;
+            
+            const finalXp = Math.floor(XP_PER_ENEMY * typeMult * eliteMult * mapMult);
+
             const isBoss = e.type === 'boss';
-            const xpAmount = (isBoss ? 500 : (e.isElite ? XP_PER_ENEMY * 5 : XP_PER_ENEMY)) * this.gameState.currentMapStats.xpMult;
             
             this.spawnLoot(e.x, e.y, isBoss, e.isElite ? ELITE_LOOT_CHANCE : LOOT_CHANCE);
             this.gameState.score += (isBoss ? 1000 : 10);
-            this.gainXp(xpAmount);
+            
+            // Replaced Direct Gain with XP Orb Spawn
+            this.spawnXPOrb(e.x + e.width/2, e.y + e.height/2, finalXp);
             
             // Remove associated bubble if exists
             if (e.modifiers.includes('temporal')) {
@@ -1731,6 +1814,28 @@ export class GameEngine {
             if (t.lifeTime <= 0) t.active = false;
         }
 
+        // Update XP Orbs
+        for (const orb of this.xpOrbs) {
+            if (!orb.active) continue;
+            
+            const distSq = (orb.x - playerCenter.x)**2 + (orb.y - playerCenter.y)**2;
+            const magnetRadius = 100 * 100;
+            const collectRadius = 20 * 20;
+
+            if (orb.magnetized || distSq < magnetRadius) {
+                orb.magnetized = true;
+                const dist = Math.sqrt(distSq);
+                const speed = 600 * dt; // Fast movement to player
+                orb.x += ((playerCenter.x - orb.x) / dist) * speed;
+                orb.y += ((playerCenter.y - orb.y) / dist) * speed;
+
+                if (distSq < collectRadius) {
+                    orb.active = false;
+                    this.gainXp(orb.value);
+                }
+            }
+        }
+
         for (const enemy of this.enemies) {
             if (!enemy.active) continue;
 
@@ -1906,13 +2011,22 @@ export class GameEngine {
                                 break; 
                             }
                         }
-
-                        b.active = false;
+                        
+                        // Mark hit
+                        b.hitIds.push(e.id);
+                        
                         const isCrit = Math.random() < pCritC;
                         const finalDmg = (b.damage || pDmg) * (isCrit ? pCritM : 1.0); // Use snapshot damage if available
 
                         this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos);
-                        break;
+                        
+                        // Pierce Logic
+                        if (b.pierce > 0) {
+                            b.pierce--;
+                        } else {
+                            b.active = false;
+                            break;
+                        }
                     }
                 }
             } else {
@@ -2180,6 +2294,46 @@ export class GameEngine {
                 ctx.fill();
                 ctx.restore();
             }
+        }
+
+        // --- DRAW XP ORBS ---
+        for (const orb of this.xpOrbs) {
+            if (!orb.active) continue;
+            ctx.save();
+            ctx.translate(orb.x, orb.y);
+            
+            // Config based on tier
+            let color = '#3b82f6'; // Blue
+            let radius = 4;
+            let shadowColor = '#60a5fa';
+            
+            if (orb.tier === 'purple') { color = '#a855f7'; radius = 5; shadowColor = '#c084fc'; }
+            if (orb.tier === 'pink') { color = '#ec4899'; radius = 6; shadowColor = '#f472b6'; }
+            if (orb.tier === 'gold') { color = '#eab308'; radius = 8; shadowColor = '#facc15'; }
+
+            // Pulse
+            const pulse = Math.sin(Date.now() / 200) * 1.5;
+            
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = shadowColor;
+            ctx.fillStyle = color;
+            
+            // Glow Core
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.beginPath();
+            ctx.arc(0, 0, radius + pulse, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // White Center for pop
+            ctx.fillStyle = 'white';
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1.0;
+            ctx.restore();
         }
 
         // --- RENDER VISUAL EFFECTS ---
