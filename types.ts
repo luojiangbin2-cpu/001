@@ -110,6 +110,9 @@ export interface Enemy extends Entity {
   // Ability Timers
   trailTimer?: number;
   blastTimer?: number;
+  
+  // Physics
+  knockbackVelocity: Vector2;
 }
 
 export type BulletOwner = 'player' | 'enemy';
@@ -221,7 +224,7 @@ export interface ItemInstance {
 
 export const MAX_SKILL_SLOTS = 4;
 
-export type SkillTag = 'projectile' | 'melee' | 'area' | 'fire' | 'cold' | 'lightning' | 'physical' | 'duration' | 'movement';
+export type SkillTag = 'projectile' | 'melee' | 'area' | 'fire' | 'cold' | 'lightning' | 'physical' | 'duration' | 'movement' | 'defense';
 export type GemType = 'active' | 'support';
 
 export interface SkillStats {
@@ -235,6 +238,7 @@ export interface SkillStats {
     projectileSpread: number; 
     duration: number;
     ailmentChance: number; // New: Chance to apply status (0-1)
+    knockback: number; // New: Physics impulse magnitude
 }
 
 export interface SkillDefinition {

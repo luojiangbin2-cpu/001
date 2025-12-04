@@ -80,7 +80,7 @@ export interface EngineCallbacks {
 interface VisualEffect {
     id: number;
     active: boolean;
-    type: 'cyclone' | 'hit' | 'portal';
+    type: 'cyclone' | 'hit' | 'portal' | 'shockwave';
     x: number;
     y: number;
     radius?: number;
@@ -180,7 +180,7 @@ export class GameEngine {
         ];
         
         activeSkills[0].activeGem = createGemItem('fireball'); // Fireball in Slot 1
-        activeSkills[1].activeGem = createGemItem('cyclone');  // Cyclone in Slot 2
+        activeSkills[1].activeGem = createGemItem('flame_ring');  // Flame Ring (Defense)
 
         // Give starter maps
         const starterMaps = [
@@ -337,7 +337,8 @@ export class GameEngine {
                 hp: 0, speed: 0, type: 'basic', maxHp: 0, attackTimer: undefined,
                 modifiers: [], isElite: false,
                 resistances: { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 },
-                statuses: {}
+                statuses: {},
+                knockbackVelocity: { x: 0, y: 0 }
             });
         }
         for (let i = 0; i < MAX_BULLETS; i++) {
@@ -1142,6 +1143,7 @@ export class GameEngine {
         enemy.active = true;
         enemy.type = type;
         enemy.isElite = isElite;
+        enemy.knockbackVelocity = { x: 0, y: 0 };
         
         const hpMult = isElite ? 2.0 : 1.0;
         const sizeMult = isElite ? 1.2 : 1.0;
@@ -1271,6 +1273,50 @@ export class GameEngine {
                      this.applySkillDamage(enemy, skill, dmgType);
                      this.applySkillDamage(enemy, skill, dmgType);
                      this.applySkillDamage(enemy, skill, dmgType);
+                }
+            }
+            return;
+        }
+
+        // --- FLAME RING LOGIC ---
+        if (skill.definition.id === 'flame_ring') {
+            const radius = skill.stats.areaOfEffect;
+            
+            // Expanding Shockwave Visual
+            this.visualEffects.push({
+                id: Math.random(),
+                active: true,
+                type: 'shockwave',
+                x: px,
+                y: py,
+                radius: radius,
+                lifeTime: 0.3,
+                maxLifeTime: 0.3,
+                color: '#f97316'
+            });
+
+            for (const enemy of this.enemies) {
+                if (!enemy.active) continue;
+                const cx = enemy.x + enemy.width/2;
+                const cy = enemy.y + enemy.height/2;
+                const dist = Math.sqrt((cx - px)**2 + (cy - py)**2);
+                
+                if (dist < radius + enemy.width/2) {
+                     this.applySkillDamage(enemy, skill, dmgType);
+                     
+                     // KNOCKBACK LOGIC
+                     const dx = cx - px;
+                     const dy = cy - py;
+                     const mag = Math.sqrt(dx*dx + dy*dy);
+                     const nx = mag > 0 ? dx/mag : 1;
+                     const ny = mag > 0 ? dy/mag : 0;
+                     
+                     let force = skill.stats.knockback;
+                     if (enemy.type === 'boss') force *= 0.1; // Boss resistance
+                     if (enemy.type === 'tank') force *= 0.5; // Tank resistance
+                     
+                     enemy.knockbackVelocity.x += nx * force;
+                     enemy.knockbackVelocity.y += ny * force;
                 }
             }
             return;
@@ -1861,6 +1907,24 @@ export class GameEngine {
         for (const enemy of this.enemies) {
             if (!enemy.active) continue;
 
+            // PHYSICS & KNOCKBACK
+            if (enemy.knockbackVelocity.x !== 0 || enemy.knockbackVelocity.y !== 0) {
+                enemy.x += enemy.knockbackVelocity.x * dt;
+                enemy.y += enemy.knockbackVelocity.y * dt;
+                
+                // Friction
+                const friction = 5.0; // Damping factor
+                enemy.knockbackVelocity.x -= enemy.knockbackVelocity.x * friction * dt;
+                enemy.knockbackVelocity.y -= enemy.knockbackVelocity.y * friction * dt;
+
+                // Stop threshold
+                if (Math.abs(enemy.knockbackVelocity.x) < 5) enemy.knockbackVelocity.x = 0;
+                if (Math.abs(enemy.knockbackVelocity.y) < 5) enemy.knockbackVelocity.y = 0;
+            }
+
+            // Determine if stunned/knocked back
+            const isKnockedBack = (Math.abs(enemy.knockbackVelocity.x) > 10 || Math.abs(enemy.knockbackVelocity.y) > 10);
+
             // STATUS UPDATE LOGIC
             // Ignited: DoT
             if (enemy.statuses['ignited']) {
@@ -1939,28 +2003,31 @@ export class GameEngine {
                 }
             }
 
-            const cx = enemy.x + enemy.width/2;
-            const cy = enemy.y + enemy.height/2;
-            const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
-            const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
-            const dx = px - cx;
-            const dy = py - cy;
-            const dist = Math.sqrt(dx*dx + dy*dy);
+            // MOVEMENT LOGIC (Only if not stunned by knockback)
+            if (!isKnockedBack) {
+                const cx = enemy.x + enemy.width/2;
+                const cy = enemy.y + enemy.height/2;
+                const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
+                const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
+                const dx = px - cx;
+                const dy = py - cy;
+                const dist = Math.sqrt(dx*dx + dy*dy);
 
-            let currentSpeed = enemy.speed;
-            
-            // Chill Effect
-            if (enemy.statuses['chilled']) {
-                currentSpeed *= 0.7; // 30% Slow
-            }
+                let currentSpeed = enemy.speed;
+                
+                // Chill Effect
+                if (enemy.statuses['chilled']) {
+                    currentSpeed *= 0.7; // 30% Slow
+                }
 
-            if (enemy.modifiers.includes('berserker') && enemy.hp < (enemy.maxHp || 100) * 0.5) {
-                currentSpeed *= 2;
-            }
+                if (enemy.modifiers.includes('berserker') && enemy.hp < (enemy.maxHp || 100) * 0.5) {
+                    currentSpeed *= 2;
+                }
 
-            if (dist > 0) {
-                enemy.x += (dx/dist) * currentSpeed * dt;
-                enemy.y += (dy/dist) * currentSpeed * dt;
+                if (dist > 0) {
+                    enemy.x += (dx/dist) * currentSpeed * dt;
+                    enemy.y += (dy/dist) * currentSpeed * dt;
+                }
             }
 
             if (this.checkCollision(enemy, playerRect)) {
@@ -1982,9 +2049,16 @@ export class GameEngine {
             }
 
             // ENEMY SHOOTING LOGIC UPDATE
-            if (enemy.attackTimer !== undefined) {
+            // Stunned enemies cannot attack
+            if (!isKnockedBack && enemy.attackTimer !== undefined) {
                 enemy.attackTimer -= dt;
                 if (enemy.attackTimer <= 0) {
+                    const cx = enemy.x + enemy.width/2;
+                    const cy = enemy.y + enemy.height/2;
+                    const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
+                    const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
+                    const dx = px - cx;
+                    const dy = py - cy;
                     const angle = Math.atan2(dy, dx);
                     // Reduced Bullet Speed: 300 -> 240
                     const bulletSpeed = 240;
@@ -2483,315 +2557,4 @@ export class GameEngine {
 
             } else if (eff.type === 'hit') {
                 ctx.save();
-                ctx.translate(eff.x, eff.y);
-                const progress = eff.lifeTime / eff.maxLifeTime;
-                ctx.globalAlpha = progress;
-                ctx.fillStyle = eff.color;
-                ctx.beginPath();
-                ctx.arc(0, 0, eff.radius! * (1.5 - progress), 0, Math.PI * 2); // Expanding
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-        
-        // --- RENDER PARTICLES ---
-        for (const p of this.gameState.particles) {
-            ctx.save();
-            ctx.translate(p.x, p.y);
-            const lifeRatio = p.life / p.maxLife;
-            ctx.globalAlpha = lifeRatio;
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            // Scale size by life
-            const size = p.size * lifeRatio; 
-            ctx.rect(-size/2, -size/2, size, size);
-            ctx.fill();
-            ctx.restore();
-        }
-
-        // --- RENDER LOOT ---
-        const time = Date.now();
-        for (const l of this.loot) {
-            if (!l.active) continue;
-            
-            let color = '#d4d4d8'; 
-            if (l.rarity === 'magic') color = '#3b82f6'; 
-            else if (l.rarity === 'rare') color = '#eab308'; 
-            else if (l.rarity === 'unique') color = '#f97316'; 
-
-            const cx = l.x + l.width / 2;
-            const cy = l.y + l.height / 2;
-
-            ctx.save();
-            
-            if (l.rarity === 'rare' || l.rarity === 'unique') {
-                 const beamHeight = 80;
-                 const beamGrad = ctx.createLinearGradient(cx, cy, cx, cy - beamHeight);
-                 beamGrad.addColorStop(0, color);
-                 beamGrad.addColorStop(1, 'rgba(255,255,255,0)');
-                 
-                 ctx.globalAlpha = 0.3;
-                 ctx.fillStyle = beamGrad;
-                 ctx.beginPath();
-                 ctx.moveTo(cx - 10, cy);
-                 ctx.lineTo(cx + 10, cy);
-                 ctx.lineTo(cx + 15, cy - beamHeight);
-                 ctx.lineTo(cx - 15, cy - beamHeight);
-                 ctx.closePath();
-                 ctx.fill();
-                 ctx.globalAlpha = 1.0;
-            }
-
-            const pulse = Math.sin(time / 200) * 2; 
-            const radius = 15 + pulse;
-            
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = color;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.stroke();
-
-            ctx.fillStyle = color;
-            ctx.globalAlpha = 0.2;
-            ctx.fill();
-            
-            ctx.globalAlpha = 1.0;
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = 'white';
-            ctx.font = '20px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            let icon = "📦";
-            if (l.itemData.type === 'gem') {
-                icon = "💎";
-            } else if (l.itemData.type === 'map') {
-                icon = "📜";
-            } else {
-                switch(l.itemData.slot) {
-                    case 'weapon': icon = "⚔️"; break;
-                    case 'offhand': icon = "🛡️"; break;
-                    case 'helmet': icon = "🪖"; break;
-                    case 'body': icon = "👕"; break;
-                    case 'gloves': icon = "🧤"; break;
-                    case 'boots': icon = "👢"; break;
-                    case 'ring1': 
-                    case 'ring2': 
-                    case 'amulet': icon = "💍"; break;
-                }
-            }
-            ctx.fillText(icon, cx, cy);
-
-            ctx.restore();
-        }
-
-        // Enemies
-        let activeBoss: Enemy | null = null;
-        for (const e of this.enemies) {
-            if (!e.active) continue;
-            
-            if (e.x + e.width < camX - visibleWidth/2 || e.x > camX + visibleWidth/2 ||
-                e.y + e.height < camY - visibleHeight/2 || e.y > camY + visibleHeight/2) {
-                 if (e.type === 'boss') activeBoss = e; 
-                 continue;
-            }
-            
-            let key = 'enemy';
-            if (e.type === 'fast') key = 'enemyFast';
-            if (e.type === 'tank') key = 'enemyTank';
-            if (e.type === 'boss') { key = 'enemyBoss'; activeBoss = e; }
-            
-            if (e.modifiers.includes('ghostly')) ctx.globalAlpha = 0.6;
-            
-            drawSprite(key, e.x, e.y, e.width, e.height, ENEMY_COLOR);
-            
-            ctx.globalAlpha = 1.0; 
-
-            // DRAW STATUS EFFECTS
-            if (Object.keys(e.statuses).length > 0) {
-                const cx = e.x + e.width/2;
-                const cy = e.y + e.height/2;
-                
-                if (e.statuses['ignited']) {
-                    ctx.strokeStyle = '#f97316';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, e.width/2 + 5, 0, Math.PI*2);
-                    ctx.stroke();
-                }
-                if (e.statuses['chilled']) {
-                    ctx.strokeStyle = '#22d3ee';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, e.width/2 + 8, 0, Math.PI*2);
-                    ctx.stroke();
-                }
-                if (e.statuses['shocked']) {
-                    ctx.strokeStyle = '#facc15';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, e.width/2 + 11, 0, Math.PI*2);
-                    ctx.stroke();
-                }
-            }
-
-            if (e.isElite) {
-                ctx.strokeStyle = ELITE_COLOR;
-                ctx.lineWidth = 3;
-                ctx.strokeRect(e.x - 2, e.y - 2, e.width + 4, e.height + 4);
-            }
-
-            if (e.modifiers.includes('berserker') && e.hp < (e.maxHp || 100) * 0.5) {
-                ctx.strokeStyle = '#ef4444'; 
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(e.x + e.width/2, e.y + e.height/2, e.width/1.5, 0, Math.PI*2);
-                ctx.stroke();
-            }
-
-            if (e.modifiers.includes('proximal')) {
-                ctx.strokeStyle = '#a855f7'; 
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                const t = Date.now()/300;
-                ctx.arc(e.x + e.width/2, e.y + e.height/2, e.width + Math.sin(t)*5, 0, Math.PI*2);
-                ctx.stroke();
-            }
-
-            if (e.type !== 'boss' && e.hp < (e.maxHp || e.hp)) {
-                const barW = e.width;
-                const barH = 4;
-                const barX = e.x;
-                const barY = e.y - 8;
-                ctx.fillStyle = '#1f2937';
-                ctx.fillRect(barX, barY, barW, barH);
-                ctx.fillStyle = '#ef4444';
-                ctx.fillRect(barX, barY, barW * (e.hp / (e.maxHp || 1)), barH);
-            }
-        }
-
-        for (const b of this.bullets) {
-            if (!b.active) continue;
-
-            if (b.owner === 'player' && b.damageType === 'fire') {
-                // --- FIREBALL RENDER ---
-                const cx = b.x + b.width / 2;
-                const cy = b.y + b.height / 2;
-                
-                ctx.save();
-                ctx.globalCompositeOperation = 'lighter';
-                
-                // Projectile Head
-                const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, 15);
-                grad.addColorStop(0, 'white');
-                grad.addColorStop(0.4, 'yellow');
-                grad.addColorStop(1, 'rgba(255, 0, 0, 0)');
-
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(cx, cy, 20, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.restore();
-            } else {
-                const key = b.owner === 'enemy' ? 'bulletBoss' : 'bullet';
-                const color = b.color ? b.color : (b.owner === 'enemy' ? BULLET_BOSS_COLOR : '#facc15'); 
-                drawSprite(key, b.x, b.y, b.width, b.height, color);
-            }
-        }
-
-        // Draw Player and Invulnerability Effect
-        if (this.gameState.playerInvulnerabilityTimer > 0) {
-            if (Math.floor(Date.now() / 100) % 2 === 0) {
-                drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
-            }
-        } else {
-             drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
-        }
-
-        for (const t of this.floatingTexts) {
-            if (!t.active) continue;
-            ctx.globalAlpha = t.lifeTime / FLOATING_TEXT_LIFETIME; 
-            ctx.font = `900 ${14 * t.scale}px monospace`;
-            ctx.fillStyle = 'black'; 
-            ctx.fillText(t.text, t.x + 2, t.y + 2);
-            ctx.fillStyle = t.color;
-            ctx.fillText(t.text, t.x, t.y);
-            ctx.globalAlpha = 1.0;
-        }
-
-        ctx.restore(); 
-
-        if (activeBoss) {
-            const barW = Math.min(width * 0.8, 400);
-            const barH = 20;
-            const barX = (width - barW) / 2;
-            const barY = 80; 
-    
-            ctx.fillStyle = '#27272a';
-            ctx.fillRect(barX, barY, barW, barH);
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = '#000';
-            ctx.strokeRect(barX, barY, barW, barH);
-            
-            const pct = Math.max(0, activeBoss.hp / (activeBoss.maxHp || 1));
-            ctx.fillStyle = '#dc2626';
-            ctx.fillRect(barX, barY, barW * pct, barH);
-    
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText("THE BUTCHER", width/2, barY - 5);
-            ctx.textAlign = 'left';
-        }
-    
-        if (this.joystickState.active && !this.gameState.isGameOver && !this.gameState.isPaused) {
-            const { origin, current } = this.joystickState;
-            ctx.beginPath();
-            ctx.arc(origin.x, origin.y, JOYSTICK_MAX_RADIUS, 0, Math.PI*2);
-            ctx.fillStyle = JOYSTICK_BASE_COLOR;
-            ctx.fill();
-            const dx = current.x - origin.x, dy = current.y - origin.y;
-            const dist = Math.sqrt(dx*dx+dy*dy);
-            let hx = current.x, hy = current.y;
-            if (dist > JOYSTICK_MAX_RADIUS) {
-                const a = Math.atan2(dy, dx);
-                hx = origin.x + Math.cos(a)*JOYSTICK_MAX_RADIUS;
-                hy = origin.y + Math.sin(a)*JOYSTICK_MAX_RADIUS;
-            }
-            ctx.beginPath();
-            ctx.arc(hx, hy, 20, 0, Math.PI*2);
-            ctx.fillStyle = JOYSTICK_HANDLE_COLOR;
-            ctx.fill();
-        }
-    
-        if (!this.gameState.isGameOver) {
-            const activeGem = this.gameState.activeSkills[0].activeGem;
-            const skillName = activeGem ? activeGem.name : "Unarmed";
-
-            ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.fillRect(10, 50, 160, 65);
-            ctx.fillStyle = 'white';
-            ctx.font = '12px monospace';
-            ctx.fillText(`FPS: ${this.timers.currentFps}`, 20, 65);
-            
-            const enemyCount = this.enemies.filter(e => e.active).length;
-            ctx.fillText(`Enemies: ${enemyCount}${this.gameState.currentMaxEnemies ? '/' + this.gameState.currentMaxEnemies : ''}`, 20, 80);
-            
-            if (isRun) {
-                ctx.fillStyle = '#fde047';
-                ctx.fillText(`Map: +${Math.round((this.gameState.currentMapStats.packSizeMult-1)*100)}% Size`, 20, 95);
-            } else {
-                ctx.fillStyle = '#c026d3';
-                ctx.fillText(`Hideout Safe Zone`, 20, 95);
-            }
-            
-            ctx.fillStyle = '#fb923c';
-            ctx.fillText(`Main: ${skillName}`, 20, 110);
-        }
-    }
-}
+                ctx.translate(eff.x,

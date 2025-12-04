@@ -52,6 +52,21 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             areaOfEffect: 0
         }
     },
+    'flame_ring': {
+        id: 'flame_ring',
+        name: 'Flame Ring',
+        type: 'active',
+        tags: ['area', 'fire', 'defense'],
+        description: 'Push enemies away with a burst of fire.',
+        baseStats: {
+            damage: 8, // Low damage
+            attackRate: 0.25, // Cooldown is inverse (1/0.25 = 4.0s) or handled by engine logic
+            cooldown: 4.0, 
+            range: 0,
+            areaOfEffect: 200,
+            knockback: 600 // Physics force
+        }
+    },
 
     // SUPPORT GEMS
     'lmp': {
@@ -167,7 +182,8 @@ export class SkillManager {
             projectileSpeed: definition.baseStats.projectileSpeed || 0,
             projectileSpread: definition.baseStats.projectileSpread || 0,
             duration: definition.baseStats.duration || 0,
-            ailmentChance: 0
+            ailmentChance: 0,
+            knockback: definition.baseStats.knockback || 0
         };
 
         const activeTags = definition.tags; // This is the context for StatsSystem

@@ -67,6 +67,40 @@ export const TRANSLATIONS = {
     lbl_boss_floor: "BOSS FLOOR",
 
     // --- NEW DYNAMIC CONTENT ---
+    
+    // Skill Tags
+    tag_projectile: "Projectile",
+    tag_melee: "Melee",
+    tag_area: "Area",
+    tag_fire: "Fire",
+    tag_cold: "Cold",
+    tag_lightning: "Lightning",
+    tag_physical: "Physical",
+    tag_duration: "Duration",
+    tag_movement: "Movement",
+    tag_defense: "Defense",
+
+    // Skill Labels
+    lbl_dps: "DPS",
+    lbl_dmg: "Dmg",
+    lbl_rate: "Rate",
+    lbl_cooldown: "CD",
+    lbl_tags: "Tags",
+    lbl_proj: "Proj",
+    lbl_area: "Area",
+    lbl_knockback: "Knockback",
+
+    // Implicits
+    affix_implicit_weapon: "Physical Damage",
+    affix_implicit_offhand: "Block Chance",
+    affix_implicit_helmet: "Armor",
+    affix_implicit_body: "Base Health",
+    affix_implicit_gloves: "Attack Speed",
+    affix_implicit_boots: "Move Speed",
+    affix_implicit_amulet: "Health",
+    affix_implicit_ring1: "Health",
+    affix_implicit_ring2: "Health",
+
     // Skills
     skill_fireball_name: "Fireball",
     skill_fireball_desc: "Launches a ball of fire.",
@@ -74,6 +108,8 @@ export const TRANSLATIONS = {
     skill_cyclone_desc: "Spin to attack enemies around you.",
     skill_nova_name: "Ice Nova",
     skill_nova_desc: "Explodes projectiles in a circle.",
+    skill_flame_ring_name: "Flame Ring",
+    skill_flame_ring_desc: "Knocks back enemies nearby.",
     skill_lmp_name: "Lesser Multiple Projectiles",
     skill_lmp_desc: "2 Extra Projectiles, 30% Less Damage",
     skill_gmp_name: "Greater Multiple Projectiles",
@@ -104,20 +140,20 @@ export const TRANSLATIONS = {
     upg_regen_desc: "HP Regen +2/s",
 
     // Affixes
-    affix_heavy: "Heavy",
-    affix_quick: "Quick",
-    affix_alacrity: "of Alacrity",
-    affix_vital: "Vital",
-    affix_sharp: "Sharp",
-    affix_iron: "of Iron",
-    affix_pyromancer: "Pyromancer's",
-    affix_sniper: "Sniper's",
-    affix_giant: "of the Giant",
-    affix_deadly: "Deadly",
-    affix_armored: "Armored",
-    affix_hordes: "of Hordes",
-    affix_wealth: "of Wealth",
-    affix_learning: "of Learning",
+    affix_heavy: "+Damage",
+    affix_quick: "+Move Speed",
+    affix_alacrity: "+Atk Speed",
+    affix_vital: "+Max HP",
+    affix_sharp: "+Crit Chance",
+    affix_iron: "+Defense",
+    affix_pyromancer: "+Fire Dmg",
+    affix_sniper: "+Proj Dmg",
+    affix_giant: "+Area Size",
+    affix_deadly: "+Monster Dmg",
+    affix_armored: "+Monster HP",
+    affix_hordes: "+Pack Size",
+    affix_wealth: "+Item Rarity",
+    affix_learning: "+XP Gain",
     
     // Base Items
     base_weapon: "Blade",
@@ -197,6 +233,40 @@ export const TRANSLATIONS = {
     lbl_boss_floor: "首领战",
 
     // --- NEW DYNAMIC CONTENT ---
+    
+    // Skill Tags
+    tag_projectile: "投射物",
+    tag_melee: "近战",
+    tag_area: "范围",
+    tag_fire: "火焰",
+    tag_cold: "冰霜",
+    tag_lightning: "闪电",
+    tag_physical: "物理",
+    tag_duration: "持续",
+    tag_movement: "位移",
+    tag_defense: "防御",
+
+    // Skill Labels
+    lbl_dps: "秒伤",
+    lbl_dmg: "伤害",
+    lbl_rate: "攻速",
+    lbl_cooldown: "冷却",
+    lbl_tags: "标签",
+    lbl_proj: "投射物",
+    lbl_area: "范围",
+    lbl_knockback: "击退",
+
+    // Implicits
+    affix_implicit_weapon: "物理伤害",
+    affix_implicit_offhand: "格挡几率",
+    affix_implicit_helmet: "护甲",
+    affix_implicit_body: "基础生命",
+    affix_implicit_gloves: "攻击速度",
+    affix_implicit_boots: "移动速度",
+    affix_implicit_amulet: "生命值",
+    affix_implicit_ring1: "生命值",
+    affix_implicit_ring2: "生命值",
+
     // Skills
     skill_fireball_name: "火球术",
     skill_fireball_desc: "发射一枚火焰弹。",
@@ -204,6 +274,8 @@ export const TRANSLATIONS = {
     skill_cyclone_desc: "旋转并攻击周围的敌人。",
     skill_nova_name: "冰霜新星",
     skill_nova_desc: "向周围爆发冰霜投射物。",
+    skill_flame_ring_name: "抗拒火环",
+    skill_flame_ring_desc: "爆发火焰推开周围的敌人。",
     skill_lmp_name: "低阶多重投射",
     skill_lmp_desc: "额外2个投射物，30%伤害降低",
     skill_gmp_name: "高阶多重投射",
@@ -234,20 +306,20 @@ export const TRANSLATIONS = {
     upg_regen_desc: "生命回复 +2/秒",
 
     // Affixes
-    affix_heavy: "重型",
-    affix_quick: "迅捷之",
-    affix_alacrity: "敏捷之",
-    affix_vital: "活力之",
-    affix_sharp: "锋利之",
-    affix_iron: "钢铁之",
-    affix_pyromancer: "烈焰术士之",
-    affix_sniper: "狙击手之",
-    affix_giant: "巨人",
-    affix_deadly: "致命的",
-    affix_armored: "坚固的",
-    affix_hordes: "群聚之",
-    affix_wealth: "富裕之",
-    affix_learning: "智慧之",
+    affix_heavy: "+伤害",
+    affix_quick: "+移动速度",
+    affix_alacrity: "+攻击速度",
+    affix_vital: "+最大生命",
+    affix_sharp: "+暴击率",
+    affix_iron: "+护甲",
+    affix_pyromancer: "+火焰伤害",
+    affix_sniper: "+投射物伤害",
+    affix_giant: "+范围大小",
+    affix_deadly: "+怪物伤害",
+    affix_armored: "+怪物血量",
+    affix_hordes: "+怪物数量",
+    affix_wealth: "+物品稀有度",
+    affix_learning: "+经验获取",
 
     // Base Items
     base_weapon: "利刃",

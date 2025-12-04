@@ -1,5 +1,4 @@
 
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
@@ -364,20 +363,33 @@ export const GameCanvas: React.FC = () => {
       setTouchStart(null);
   };
 
+  const getDisplayName = (item: ItemInstance) => {
+      if (item.type === 'gem' && item.gemDefinitionId) {
+          return t(`skill_${item.gemDefinitionId}_name`, language);
+      }
+      if (item.type === 'equipment' && language === 'zh') {
+          const rarity = t(`rarity_${item.rarity}` as any, language);
+          const slotKey = (item.slot === 'ring1' || item.slot === 'ring2') ? 'base_ring' : `base_${item.slot}`;
+          const base = t(slotKey as any, language);
+          return `${rarity} ${base}`;
+      }
+      return item.name;
+  };
+
   const getAbbreviation = (name: string, item?: ItemInstance) => {
-    // If translated, abbreviations might differ.
-    // For now, if item is passed and has a gemDefinitionId, use translation logic
-    if (item && item.type === 'gem' && item.gemDefinitionId) {
-        const translatedName = t(`skill_${item.gemDefinitionId}_name`, language);
-        return language === 'zh' ? translatedName.substring(0, 2) : translatedName.substring(0, 3);
+    if (item) {
+        // Use localized display name as base for abbreviation
+        const displayName = getDisplayName(item);
+        if (item.type === 'gem') {
+            return language === 'zh' ? displayName.substring(0, 2) : displayName.substring(0, 3);
+        }
+        if (language === 'zh') return displayName.substring(0, 2);
+        
+        // English Equipment fallback
+        const parts = displayName.split(" ");
+        return parts.length > 1 ? parts[parts.length-1].substring(0, 3) : displayName.substring(0, 3);
     }
-    
-    // For equipment, maybe just first few chars of name? 
-    // Hard to map dynamic names back to abbreviations without complex logic.
-    // Fallback to existing logic:
-    if (language === 'zh') return name.substring(0, 2);
-    const parts = name.split(" ");
-    return parts.length > 1 ? parts[parts.length-1].substring(0, 3) : name.substring(0, 3);
+    return name.substring(0, 3);
   };
 
   // --- Render Functions ---
@@ -402,9 +414,9 @@ export const GameCanvas: React.FC = () => {
             onMouseLeave={handleItemLeave}
             className={`${sizeClass} ${bgColor} ${borderColor} border rounded flex flex-col items-center justify-center relative group cursor-pointer transition-all hover:brightness-110 active:scale-95 ${shadow} z-0 overflow-hidden`}
         >
-            {!item && <span className="text-[10px] text-neutral-600 uppercase font-bold tracking-widest">{t(`item_${slot}` as any, language).substring(0, 3)}</span>}
+            {!item && <span className="text-[9px] text-neutral-600 uppercase font-bold tracking-widest">{t(`item_${slot}` as any, language).substring(0, 3)}</span>}
             {item && (
-                <div className={`text-xs sm:text-sm font-bold text-center leading-none ${textColor} drop-shadow-md break-all px-1`}>
+                <div className={`text-[10px] sm:text-xs font-bold text-center leading-none ${textColor} drop-shadow-md break-all px-1`}>
                     {getAbbreviation(item.name, item)}
                 </div>
             )}
@@ -876,17 +888,17 @@ export const GameCanvas: React.FC = () => {
                                     <div className="mt-8 bg-zinc-900/80 border border-zinc-700 rounded p-3 text-xs font-mono w-full max-w-sm">
                                         <div className="flex justify-between text-cyan-300 font-bold mb-1">
                                             <span>{t(`skill_${resolved.definition.id}_name`, language)}</span>
-                                            <span>DPS: {Math.round(resolved.stats.damage * resolved.stats.attackRate)}</span>
+                                            <span>{t('lbl_dps', language)}: {Math.round(resolved.stats.damage * resolved.stats.attackRate)}</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400">
-                                            <span>Dmg: {resolved.stats.damage.toFixed(1)}</span>
-                                            <span>Rate: {resolved.stats.attackRate.toFixed(2)}/s</span>
-                                            <span>Proj: {resolved.stats.projectileCount}</span>
-                                            <span>Area: {resolved.stats.areaOfEffect}</span>
+                                            <span>{t('lbl_dmg', language)}: {resolved.stats.damage.toFixed(1)}</span>
+                                            <span>{t('lbl_rate', language)}: {resolved.stats.attackRate.toFixed(2)}/s</span>
+                                            <span>{t('lbl_proj', language)}: {resolved.stats.projectileCount}</span>
+                                            <span>{t('lbl_area', language)}: {resolved.stats.areaOfEffect}</span>
                                             {resolved.stats.ailmentChance > 0 && (
                                                 <span className="text-yellow-400">{t('stat_ailment', language)}: {(resolved.stats.ailmentChance * 100).toFixed(0)}%</span>
                                             )}
-                                            <span className="col-span-2 text-[10px] text-zinc-500 mt-1">Tags: {resolved.tags.join(', ')}</span>
+                                            <span className="col-span-2 text-[10px] text-zinc-500 mt-1">{t('lbl_tags', language)}: {resolved.tags.map(tag => t(`tag_${tag}`, language)).join(', ')}</span>
                                         </div>
                                     </div>
                                 );
@@ -991,24 +1003,24 @@ export const GameCanvas: React.FC = () => {
                         </div>
 
                         {!showMerchant && (
-                            <div className="w-full bg-[#050505] relative p-4 flex flex-col items-center justify-center border-b border-zinc-800 shrink-0">
+                            <div className="w-full bg-[#050505] relative p-2 flex flex-col items-center justify-center border-b border-zinc-800 shrink-0">
                                 <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-                                    <div className="w-56 h-80 border-2 border-zinc-700 rounded-[50%]"></div>
+                                    <div className="w-48 h-64 border-2 border-zinc-700 rounded-[50%]"></div>
                                 </div>
-                                <div className="relative w-full max-w-[360px] grid grid-cols-3 gap-4 z-10 py-4">
-                                    <div className="col-start-2 h-20">{renderSlot('helmet', engineRef.current.gameState.equipment.helmet, 'h-full w-full')}</div>
-                                    <div className="col-start-1 row-start-2 h-28">{renderSlot('weapon', engineRef.current.gameState.equipment.weapon, 'h-full w-full')}</div>
-                                    <div className="col-start-2 row-start-2 h-28 flex flex-col gap-2">
-                                        {renderSlot('amulet', engineRef.current.gameState.equipment.amulet, 'h-1/3 w-full')}
-                                        {renderSlot('body', engineRef.current.gameState.equipment.body, 'h-2/3 w-full')}
+                                <div className="relative w-full max-w-[340px] grid grid-cols-3 gap-1 z-10 py-2">
+                                    <div className="col-start-2 h-14">{renderSlot('helmet', engineRef.current.gameState.equipment.helmet, 'h-full w-full')}</div>
+                                    <div className="col-start-1 row-start-2 h-24">{renderSlot('weapon', engineRef.current.gameState.equipment.weapon, 'h-full w-full')}</div>
+                                    <div className="col-start-2 row-start-2 h-24 flex flex-col gap-1">
+                                        {renderSlot('amulet', engineRef.current.gameState.equipment.amulet, 'h-8 w-full')}
+                                        {renderSlot('body', engineRef.current.gameState.equipment.body, 'h-full w-full')}
                                     </div>
-                                    <div className="col-start-3 row-start-2 h-28">{renderSlot('offhand', engineRef.current.gameState.equipment.offhand, 'h-full w-full')}</div>
-                                    <div className="col-start-1 row-start-3 h-16">{renderSlot('gloves', engineRef.current.gameState.equipment.gloves, 'h-full w-full')}</div>
-                                    <div className="col-start-2 row-start-3 h-16 flex justify-between gap-2">
+                                    <div className="col-start-3 row-start-2 h-24">{renderSlot('offhand', engineRef.current.gameState.equipment.offhand, 'h-full w-full')}</div>
+                                    <div className="col-start-1 row-start-3 h-14">{renderSlot('gloves', engineRef.current.gameState.equipment.gloves, 'h-full w-full')}</div>
+                                    <div className="col-start-2 row-start-3 h-14 flex justify-between gap-1">
                                         {renderSlot('ring1', engineRef.current.gameState.equipment.ring1, 'w-1/2 h-full')}
                                         {renderSlot('ring2', engineRef.current.gameState.equipment.ring2, 'w-1/2 h-full')}
                                     </div>
-                                    <div className="col-start-3 row-start-3 h-16">{renderSlot('boots', engineRef.current.gameState.equipment.boots, 'h-full w-full')}</div>
+                                    <div className="col-start-3 row-start-3 h-14">{renderSlot('boots', engineRef.current.gameState.equipment.boots, 'h-full w-full')}</div>
                                 </div>
                             </div>
                         )}
@@ -1093,11 +1105,7 @@ export const GameCanvas: React.FC = () => {
             >
                 <div className="bg-zinc-950 border border-neutral-600 p-3 rounded shadow-2xl relative w-full break-words whitespace-normal">
                     <div className={`font-bold border-b border-neutral-700 pb-1 mb-1 text-sm ${tooltip.item.rarity === 'unique' ? 'text-orange-400' : tooltip.item.rarity === 'rare' ? 'text-yellow-300' : tooltip.item.rarity === 'magic' ? 'text-blue-300' : 'text-gray-200'}`}>
-                        {/* Dynamic Name Construction (Simplified) or Fallback */}
-                        {tooltip.item.type === 'gem' 
-                            ? t(`skill_${tooltip.item.gemDefinitionId}_name`, language)
-                            : tooltip.item.name // Equipment names are hard to fully dynamicize without major refactor, keeping english for now
-                        }
+                        {getDisplayName(tooltip.item)}
                     </div>
                     {tooltip.item.type === 'gem' ? (
                         <div className="text-xs text-zinc-400">
@@ -1108,7 +1116,12 @@ export const GameCanvas: React.FC = () => {
                                  </div>
                              )}
                              <div className="text-zinc-300 mb-2">{t(`skill_${tooltip.item.gemDefinitionId}_desc`, language)}</div>
-                             <div className="text-[10px] text-zinc-500">Tags: {SKILL_DATABASE[tooltip.item.gemDefinitionId!]?.tags.join(", ")}</div>
+                             <div className="text-xs text-zinc-500 mt-2 flex flex-wrap gap-1">
+                                 <span className="text-zinc-600">{t('lbl_tags', language)}:</span>
+                                 {SKILL_DATABASE[tooltip.item.gemDefinitionId!]?.tags.map(tag => (
+                                     <span key={tag} className="text-zinc-400 bg-zinc-900 px-1 rounded">{t(`tag_${tag}`, language)}</span>
+                                 ))}
+                             </div>
                         </div>
                     ) : tooltip.item.type === 'map' ? (
                         <div className="space-y-1">
@@ -1156,19 +1169,19 @@ export const GameCanvas: React.FC = () => {
                                         ? "border-b border-zinc-700 pb-2 mb-2" 
                                         : "";
                                     
-                                    // Translate Affix Name
-                                    // Logic: strip prefix_ / suffix_ / implicit_ and try to find key
-                                    let affixKey = affix.definitionId;
-                                    affixKey = affixKey.replace('prefix_', '').replace('suffix_', '').replace('implicit_', '');
-                                    // Special case handling or fallback
-                                    let affixName = t(`affix_${affixKey}`, language);
-                                    if (affixName.startsWith('affix_')) affixName = affix.name; // Fallback to raw name if translation missing
-
-                                    // Special handling for Implicit (Base Property)
-                                    if (affix.definitionId.includes('implicit')) {
-                                         // Implicit names are often hardcoded stats names in english e.g. "Physical Damage"
-                                         // We can map known implicits or just use raw name for now as they are simple
-                                         affixName = affix.name; 
+                                    let affixName = affix.name;
+                                    
+                                    if (isImplicit) {
+                                        // Use specific implicit key
+                                        affixName = t(`affix_implicit_${tooltip.item.slot}`, language);
+                                    } else {
+                                        // Translate Affix Name
+                                        let affixKey = affix.definitionId;
+                                        affixKey = affixKey.replace(/^map_/, '').replace(/^prefix_/, '').replace(/^suffix_/, '');
+                                        let translated = t(`affix_${affixKey}`, language);
+                                        if (!translated.startsWith('affix_')) {
+                                            affixName = translated;
+                                        }
                                     }
 
                                     return (
@@ -1220,23 +1233,6 @@ export const GameCanvas: React.FC = () => {
                                 desc = t(`skill_${option.gemItem.gemDefinitionId}_desc`, language);
                             } else {
                                 // Stat upgrade
-                                name = t(`upg_${option.id.split('_')[0]}_name`, language); // Split uuid if present?
-                                // Actually upgrades from ItemSystem might be cloned with new IDs. 
-                                // We need the definition ID. But `generateRewards` clones them. 
-                                // HACK: We can match by English name or just rely on the ID being 'multishot' etc before cloning?
-                                // `generateRewards` does: { ...stat, id: uuid() }. The original ID is lost.
-                                // FIX: We should rely on `stat` type or match by name, but name is English.
-                                // Let's use the `stat` field + value to identify? No.
-                                // In `STAT_UPGRADES` list, id is `multishot`. 
-                                // Let's try to recover it: `name` is unique enough? 
-                                // Better: Upgrades in `ItemSystem` should probably keep a `refId` or similar.
-                                // For now, let's map by known English Names or just skip translation for Stat Upgrades if ID is random.
-                                // Wait, `generateRewards` clones `stat` object. If `id` is overwritten, we lose it. 
-                                // BUT `generateRewards` code: `rewards.push({ ...stat, id: uuid() });`
-                                // We lost the original key. 
-                                // RECOVERY: Let's use `name` to lookup key in reverse? Or just display english for stats for now.
-                                // OR: We can change `ItemSystem` to not overwrite ID? No, ID needs to be unique for keys.
-                                // Let's try to map English Name -> Key for now.
                                 if (option.name === 'Multi-Shot') { name = t('upg_multishot_name', language); desc = t('upg_multishot_desc', language); }
                                 if (option.name === 'Haste') { name = t('upg_haste_name', language); desc = t('upg_haste_desc', language); }
                                 if (option.name === 'Giant') { name = t('upg_giant_name', language); desc = t('upg_giant_desc', language); }
