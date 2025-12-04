@@ -395,9 +395,9 @@ export const GameCanvas: React.FC = () => {
         case 'body': return '👕';
         case 'gloves': return '🧤';
         case 'boots': return '👢';
+        case 'amulet': return '🧿';
         case 'ring1': 
-        case 'ring2': 
-        case 'amulet': return '💍';
+        case 'ring2': return '💍';
         default: return '❓';
     }
   }

@@ -1,5 +1,4 @@
 
-
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -36,7 +35,7 @@ const BULLET_LIFETIME = 2.0;
 const MAX_BULLETS = 300; 
 
 const LOOT_SIZE = 20; 
-const LOOT_CHANCE = 0.2; 
+const LOOT_CHANCE = 0.08; 
 const ELITE_LOOT_CHANCE = 0.5;
 const MAX_LOOT = 50;
 
@@ -784,6 +783,17 @@ export class GameEngine {
 
     public equipItem(item: ItemInstance) {
         if (item.type === 'gem' || item.type === 'map') return; 
+
+        // Smart Ring Logic: Auto-target empty slot or default to ring1
+        if (item.slot === 'ring1' || item.slot === 'ring2') {
+             if (!this.gameState.equipment.ring1) {
+                 item.slot = 'ring1';
+             } else if (!this.gameState.equipment.ring2) {
+                 item.slot = 'ring2';
+             } else {
+                 item.slot = 'ring1'; // Default replace ring1
+             }
+        }
 
         const currentEquipped = this.gameState.equipment[item.slot as ItemSlot];
         const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
