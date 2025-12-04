@@ -13,18 +13,13 @@ export interface JoystickState {
 }
 
 // --- ANIMATION SYSTEM ---
-export interface SpriteState {
+export interface SpriteConfig {
     src: string;        // Base64 or URL
     frameWidth: number; // Width of a single frame
     frameHeight: number;// Height of a single frame
     frameCount: number; // Total frames (assumed horizontal strip)
     frameRate: number;  // Seconds per frame (e.g., 0.1)
     loop: boolean;      // Should animation loop
-}
-
-export interface SpriteConfig {
-    states: Record<string, SpriteState>; // e.g. 'idle': {...}, 'run': {...}
-    defaultState: string; // Fallback state key, usually 'idle'
 }
 
 export interface Entity {
@@ -319,10 +314,4 @@ export interface GameState {
   groundEffects: GroundEffect[];
   particles: Particle[];
   xpOrbs: XPOrb[];
-
-  // Player Animation State
-  direction: 'left' | 'right';
-  animState: 'idle' | 'run' | 'attack';
-  animFrame: number;
-  animTimer: number;
 }
