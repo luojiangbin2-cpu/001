@@ -12,6 +12,16 @@ export interface JoystickState {
   vector: Vector2;
 }
 
+// --- ANIMATION SYSTEM ---
+export interface SpriteConfig {
+    src: string;        // Base64 or URL
+    frameWidth: number; // Width of a single frame
+    frameHeight: number;// Height of a single frame
+    frameCount: number; // Total frames (assumed horizontal strip)
+    frameRate: number;  // Seconds per frame (e.g., 0.1)
+    loop: boolean;      // Should animation loop
+}
+
 export interface Entity {
   id: number;
   active: boolean;
@@ -20,6 +30,12 @@ export interface Entity {
   width: number;
   height: number;
   color: string;
+  
+  // Animation State (Optional for backward compatibility)
+  direction?: 'left' | 'right';
+  animState?: 'idle' | 'run' | 'attack';
+  animFrame?: number;
+  animTimer?: number;
 }
 
 // --- VISUAL EFFECTS ---
@@ -298,4 +314,10 @@ export interface GameState {
   groundEffects: GroundEffect[];
   particles: Particle[];
   xpOrbs: XPOrb[];
+
+  // Player Animation State
+  direction: 'left' | 'right';
+  animState: 'idle' | 'run' | 'attack';
+  animFrame: number;
+  animTimer: number;
 }

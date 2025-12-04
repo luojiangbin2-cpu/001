@@ -1,20 +1,45 @@
 
-
-import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier } from './types';
+import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, SpriteConfig } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
 import { SkillManager, SKILL_DATABASE } from './SkillSystem';
+import { AssetManager } from './AssetManager';
 
-// --- ASSETS (SVG Data URIs) ---
-const ASSETS: { [key: string]: string } = {
-  player: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0OCIgZmlsbD0iIzNiODJmNiIgc3Ryb2tlPSIjMjU2M2ViIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIyNSIgZmlsbD0iIzYwYTVmYSIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==`,
-  enemy: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIHJ4PSIyMCIgZmlsbD0iI2VmNDQ0NCIgc3Ryb2tlPSIjOTkxYjFiIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNMzAgNDAgTDUwIDYwIEw3MCA0MCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSI1IiBmaWxsPSJub25lIi8+CiAgPGNpcmNsZSBjeD0iMzUiIGN5PSI0MCIgcj0iNSIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSI2NSIgY3k9IjQwIiByPSI1IiBmaWxsPSJibGFjayIvPgo8L3N2Zz4=`,
-  enemyFast: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cGF0aCBkPSJNIDUwIDUgTCA5NSA5NSBMIDUwIDc1IEwgNSA5NSBaIiBmaWxsPSIjMDZ1NmQ0IiBzdHJva2U9IiMxZTMhOGEiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNDUiIHI9IjUiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPg==`,
-  enemyTank: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIGZpbGw9IiMxNTgwM2QiIHN0cm9rZT0iIzE0NTMyZCIgc3Ryb2tlLXdpZHRoPSI4Ii8+CiAgPHJlY3QgeD0iMjAiIHk9IjIwIiB3aWR0aD0iNjAiIGhlaWdodD0iMTUiIGZpbGw9ImJsYWNrIiBvcGFjaXR5PSIwLjMiLz4KPC9zdmc+`,
-  enemyBoss: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cGF0aCBkPSJNIDUwIDUgQyAyMCA1IDIwIDQ1IDIwIDQ1IEwgMjAgNzAgQyAyMCA4NSAzNSA5NSA1MCA5NSBDIDY1IDk1IDgwIDg1IDgwIDcwIEwgODAgNDUgQyA4MCA0NSA4MCA1IDUwIDUgWiIgZmlsbD0iIzc5MzA5NCIgc3Ryb2tlPSIjNTgxYzhjIiBzdHJva2Utd2lkdGg9IjUiLz4KICA8Y2lyY2xlIGN4PSIzNSIgY3k9IjQwIiByPSI4IiBmaWxsPSIjZmZjMTA3Ii8+CiAgPGNpcmNsZSBjeD0iNjUiIGN5PSI0MCIgcj0iOCIgZmlsbD0iI2ZmYzEwNyIvPgogIDxwYXRoIGQ9Ik0gNDAgNzAgTCA1MCA2MCBMIDYwIDcwIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjMiIGZpbGw9Im5vbmUiLz4KPC9zdmc+`,
-  bullet: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iI2ZhY2MxNSIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjI1IiBmaWxsPSIjZmZmZmZmIi8+Cjwvc3ZnPg==`,
-  bulletBoss: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iI2RjMjYyNiIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjI1IiBmaWxsPSIjN2YxZDFkIi8+Cjwvc3ZnPg==`,
-  crate: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSIxMCIgeT0iMjAiIHdpZHRoPSI4MCIgaGVpZ2h0PSI2MCIgZmlsbD0iI2ZiYmYyNCIgc3Ryb2tlPSIjYjQ1MzA5IiBzdHJva2Utd2lkdGg9IjUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMzUiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMCIgZmlsbD0iI2I0NTMwOSIvPgogIDxyZWN0IHg9IjQwIiB5PSIzbCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiByeD0iNSIgZmlsbD0iIzQ1MWEwMyIvPgo8L3N2Zz4=`
+// --- ASSETS (Sprite Configs) ---
+// Using 100x100 frame size for existing SVGs (viewBox="0 0 100 100")
+const ASSETS: Record<string, SpriteConfig> = {
+  player: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0OCIgZmlsbD0iIzNiODJmNiIgc3Ryb2tlPSIjMjU2M2ViIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIyNSIgZmlsbD0iIzYwYTVmYSIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  enemy: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIHJ4PSIyMCIgZmlsbD0iI2VmNDQ0NCIgc3Ryb2tlPSIjOTkxYjFiIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNMzAgNDAgTDUwIDYwIEw3MCA0MCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSI1IiBmaWxsPSJub25lIi8+CiAgPGNpcmNsZSBjeD0iMzUiIGN5PSI0MCIgcj0iNSIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSI2NSIgY3k9IjQwIiByPSI1IiBmaWxsPSJibGFjayIvPgo8L3N2Zz4=`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  enemyFast: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cGF0aCBkPSJNIDUwIDUgTCA5NSA5NSBMIDUwIDc1IEwgNSA5NSBaIiBmaWxsPSIjMDZ1NmQ0IiBzdHJva2U9IiMxZTMhOGEiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNDUiIHI9IjUiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPg==`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  enemyTank: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIGZpbGw9IiMxNTgwM2QiIHN0cm9rZT0iIzE0NTMyZCIgc3Ryb2tlLXdpZHRoPSI4Ii8+CiAgPHJlY3QgeD0iMjAiIHk9IjIwIiB3aWR0aD0iNjAiIGhlaWdodD0iMTUiIGZpbGw9ImJsYWNrIiBvcGFjaXR5PSIwLjMiLz4KPC9zdmc+`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  enemyBoss: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cGF0aCBkPSJNIDUwIDUgQyAyMCA1IDIwIDQ1IDIwIDQ1IEwgMjAgNzAgQyAyMCA4NSAzNSA5NSA1MCA5NSBDIDY1IDk1IDgwIDg1IDgwIDcwIEwgODAgNDUgQyA4MCA0NSA4MCA1IDUwIDUgWiIgZmlsbD0iIzc5MzA5NCIgc3Ryb2tlPSIjNTgxYzhjIiBzdHJva2Utd2lkdGg9IjUiLz4KICA8Y2lyY2xlIGN4PSIzNSIgY3k9IjQwIiByPSI4IiBmaWxsPSIjZmZjMTA3Ii8+CiAgPGNpcmNsZSBjeD0iNjUiIGN5PSI0MCIgcj0iOCIgZmlsbD0iI2ZmYzEwNyIvPgogIDxwYXRoIGQ9Ik0gNDAgNzAgTCA1MCA2MCBMIDYwIDcwIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjMiIGZpbGw9Im5vbmUiLz4KPC9zdmc+`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  bullet: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iI2ZhY2MxNSIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjI1IiBmaWxsPSIjZmZmZmZmIi8+Cjwvc3ZnPg==`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  bulletBoss: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iI2RjMjYyNiIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjI1IiBmaWxsPSIjN2YxZDFkIi8+Cjwvc3ZnPg==`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  },
+  crate: {
+    src: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSIxMCIgeT0iMjAiIHdpZHRoPSI4MCIgaGVpZ2h0PSI2MCIgZmlsbD0iI2ZiYmYyNCIgc3Ryb2tlPSIjYjQ1MzA5IiBzdHJva2Utd2lkdGg9IjUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMzUiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMCIgZmlsbD0iI2I0NTMwOSIvPgogIDxyZWN0IHg9IjQwIiB5PSIzbCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiByeD0iNSIgZmlsbD0iIzQ1MWEwMyIvPgo8L3N2Zz4=`,
+    frameWidth: 100, frameHeight: 100, frameCount: 1, frameRate: 0.1, loop: true
+  }
 };
 
 // --- Configs & Constants ---
@@ -74,7 +99,7 @@ export interface EngineCallbacks {
     onNotification: (text: string) => void;
     onInventoryChange: () => void;
     onNearbyInteractable: (interactable: Interactable | null) => void;
-    onOpenShop: () => void; // New Callback for NPC interaction
+    onOpenShop: () => void;
 }
 
 interface VisualEffect {
@@ -109,7 +134,7 @@ export class GameEngine {
     callbacks: EngineCallbacks;
 
     // Assets
-    images: { [key: string]: HTMLImageElement } = {};
+    assetManager: AssetManager;
     assetsLoaded = false;
 
     // State
@@ -142,6 +167,7 @@ export class GameEngine {
         this.callbacks = callbacks;
         this.playerStats = new StatsSystem();
         this.currentHp = 100;
+        this.assetManager = new AssetManager();
         
         // Initialize Default State
         const loaded = this.loadGame();
@@ -150,6 +176,12 @@ export class GameEngine {
         } else {
             this.gameState = this.createInitialState();
         }
+
+        // Ensure player entity animation defaults
+        if (!this.gameState.direction) this.gameState.direction = 'right';
+        if (!this.gameState.animState) this.gameState.animState = 'idle';
+        if (this.gameState.animFrame === undefined) this.gameState.animFrame = 0;
+        if (this.gameState.animTimer === undefined) this.gameState.animTimer = 0;
 
         this.joystickState = {
             active: false,
@@ -202,7 +234,8 @@ export class GameEngine {
             height: 80,
             color: '#c026d3',
             interactionRadius: 100,
-            label: 'Map Device'
+            label: 'Map Device',
+            direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
         };
 
         const merchant: NPC = {
@@ -215,7 +248,8 @@ export class GameEngine {
             width: 50,
             height: 50,
             color: '#22c55e',
-            interactionRadius: 80
+            interactionRadius: 80,
+            direction: 'left', animState: 'idle', animFrame: 0, animTimer: 0
         };
 
         return {
@@ -259,7 +293,13 @@ export class GameEngine {
             expeditionActive: false,
             groundEffects: [],
             particles: [],
-            xpOrbs: []
+            xpOrbs: [],
+            
+            // Animation Initial
+            direction: 'right',
+            animState: 'idle',
+            animFrame: 0,
+            animTimer: 0
         };
     }
 
@@ -302,7 +342,8 @@ export class GameEngine {
                     width: 50,
                     height: 50,
                     color: '#22c55e',
-                    interactionRadius: 80
+                    interactionRadius: 80,
+                    direction: 'left', animState: 'idle', animFrame: 0, animTimer: 0
                 };
                 parsed.npcs = [merchant];
                 // Ensure Map Device
@@ -318,10 +359,17 @@ export class GameEngine {
                         height: 80,
                         color: '#c026d3',
                         interactionRadius: 100,
-                        label: 'Map Device'
+                        label: 'Map Device',
+                        direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
                     });
                 }
             }
+            
+            // Animation Restoration
+            if (!parsed.direction) parsed.direction = 'right';
+            if (!parsed.animState) parsed.animState = 'idle';
+            parsed.animFrame = 0;
+            parsed.animTimer = 0;
 
             return parsed as GameState;
         } catch (e) {
@@ -337,13 +385,15 @@ export class GameEngine {
                 hp: 0, speed: 0, type: 'basic', maxHp: 0, attackTimer: undefined,
                 modifiers: [], isElite: false,
                 resistances: { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 },
-                statuses: {}
+                statuses: {},
+                direction: 'left', animState: 'idle', animFrame: 0, animTimer: 0
             });
         }
         for (let i = 0; i < MAX_BULLETS; i++) {
             this.bullets.push({ 
                 id: i, active: false, x: 0, y: 0, width: 0, height: 0, color: '#000', 
-                vx: 0, vy: 0, lifeTime: 0, owner: 'player', hitIds: [], damageType: 'physical', pierce: 0, ailmentChance: 0
+                vx: 0, vy: 0, lifeTime: 0, owner: 'player', hitIds: [], damageType: 'physical', pierce: 0, ailmentChance: 0,
+                direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
             });
         }
         
@@ -354,7 +404,8 @@ export class GameEngine {
                 lifeTime: 0,
                 itemData: dummyItem,
                 rarity: 'normal',
-                autoCollectRadius: 50
+                autoCollectRadius: 50,
+                direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
             });
         }
 
@@ -374,17 +425,7 @@ export class GameEngine {
     }
 
     public async loadAssets() {
-        const promises = Object.entries(ASSETS).map(([key, src]) => {
-            return new Promise<void>((resolve) => {
-                const img = new Image();
-                img.src = src;
-                img.onload = () => {
-                    this.images[key] = img;
-                    resolve();
-                };
-            });
-        });
-        await Promise.all(promises);
+        await this.assetManager.loadImages(ASSETS);
         this.assetsLoaded = true;
     }
 
@@ -468,9 +509,6 @@ export class GameEngine {
             const camX = this.gameState.playerWorldPos.x + PLAYER_SIZE / 2;
             const camY = this.gameState.playerWorldPos.y + PLAYER_SIZE / 2;
             
-            // Convert Screen Pos to World Pos (Roughly)
-            // ScreenX = (WorldX - CamX) * Zoom + HalfWidth
-            // WorldX = (ScreenX - HalfWidth) / Zoom + CamX
             const halfW = this.canvas!.width / 2;
             const halfH = this.canvas!.height / 2;
             const worldX = (pos.x - halfW) / CAMERA_ZOOM + camX;
@@ -561,8 +599,7 @@ export class GameEngine {
         this.gameState.currentFloor = 1;
         this.gameState.currentKills = 0;
         
-        // Extended Playtime Formula: 50 + (Floor * 50) + (Tier * 30)
-        // Floor 1: 50 + 50 + Tier*30 = 100+
+        // Extended Playtime Formula
         this.gameState.targetKills = 50 + (1 * 50) + (mapStats.tier * 30); 
         
         this.gameState.playerWorldPos = { x: 0, y: 0 };
@@ -614,7 +651,6 @@ export class GameEngine {
              this.directorState.bossSpawned = true;
              this.callbacks.onNotification(`FLOOR 5: BOSS ENCOUNTER`);
         } else {
-             // Extended Playtime Formula
              this.gameState.targetKills = 50 + (this.gameState.currentFloor * 50) + (this.gameState.currentMapStats.tier * 30);
              this.callbacks.onNotification(`Descended to Floor ${this.gameState.currentFloor}`);
         }
@@ -660,7 +696,8 @@ export class GameEngine {
             height: 80,
             color: '#c026d3',
             interactionRadius: 100,
-            label: 'Map Device'
+            label: 'Map Device',
+            direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
         };
         const merchant: NPC = {
             id: 888,
@@ -672,7 +709,8 @@ export class GameEngine {
             width: 50,
             height: 50,
             color: '#22c55e',
-            interactionRadius: 80
+            interactionRadius: 80,
+            direction: 'left', animState: 'idle', animFrame: 0, animTimer: 0
         };
         this.gameState.interactables = [mapDevice];
         this.gameState.npcs = [merchant];
@@ -749,21 +787,14 @@ export class GameEngine {
 
         this.playerStats.setBase('moveSpeed', 3.0);
         this.playerStats.setBase('attackSpeed', 1.0);
-        
-        // Base Damage = 10 + (Current Level * 2)
         this.playerStats.setBase('bulletDamage', 10 + (level * 2));
-        
         this.playerStats.setBase('projectileCount', 1);
         this.playerStats.setBase('projectileSpread', 15);
-        
-        // Base HP = 100 + (Current Level * 10)
         this.playerStats.setBase('maxHp', 100 + (level * 10));
-        
         this.playerStats.setBase('hpRegen', 0);
         this.playerStats.setBase('critChance', 0.05);
         this.playerStats.setBase('critMultiplier', 1.5);
         this.playerStats.setBase('defense', 0);
-        // Base Ailment Chance = 15%
         this.playerStats.setBase('ailmentChance', 0.15);
   
         for (const upg of this.chosenUpgrades) {
@@ -791,7 +822,6 @@ export class GameEngine {
             this.currentHp = finalMaxHp;
         }
 
-        // Notify UI immediately to update stats panel and HUD
         this.updateHud(); 
         this.callbacks.onInventoryChange();
     }
@@ -810,8 +840,6 @@ export class GameEngine {
         this.gameState.equipment[item.slot as ItemSlot] = item;
         this.recalculateStats(); 
         this.saveGame();
-        // onInventoryChange called inside recalculateStats now, but safe to call again or remove
-        // Leaving it here ensures flow is clear
     }
 
     public unequipItem(slot: ItemSlot) {
@@ -993,7 +1021,6 @@ export class GameEngine {
 
         this.gameState.level += 1;
         this.gameState.xp -= this.gameState.nextLevelXp;
-        // Steep XP Curve: 150 * (1.25 ^ (Level - 1))
         this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
         
         this.gameState.isPaused = false;
@@ -1027,15 +1054,11 @@ export class GameEngine {
     }
 
     private gainXp(amount: number) {
-        // Level Gap Penalty Logic
         let penaltyMultiplier = 1.0;
-        // Default Tier 1 if hideout or unknown
         const mapTier = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1; 
         const playerLevel = this.gameState.level;
         
-        // If Player is significantly higher than map tier
         if (playerLevel > mapTier + 3) {
-            // Severe Penalty: (MapTier / PlayerLevel) ^ 4
             penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
         }
 
@@ -1058,7 +1081,6 @@ export class GameEngine {
             orb.value = value;
             orb.magnetized = false;
             
-            // Tier Logic
             if (value >= 500) orb.tier = 'gold';
             else if (value >= 150) orb.tier = 'pink';
             else if (value >= 50) orb.tier = 'purple';
@@ -1087,8 +1109,8 @@ export class GameEngine {
             let rarity: ItemRarity = 'normal';
             const rarityBoost = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.rarityMult : 1;
             
-            if (roll > 0.95 / rarityBoost) rarity = 'unique';
-            else if (roll > 0.85 / rarityBoost) rarity = 'rare';
+            // REMOVED UNIQUE DROP LOGIC
+            if (roll > 0.85 / rarityBoost) rarity = 'rare';
             else if (roll > 0.6 / rarityBoost) rarity = 'magic';
 
             const iLvl = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1;
@@ -1101,6 +1123,7 @@ export class GameEngine {
             loot.itemData = item;
             loot.rarity = rarity;
             loot.autoCollectRadius = 50; 
+            loot.direction = 'right';
         }
     }
   
@@ -1155,14 +1178,19 @@ export class GameEngine {
         // Modifiers Logic
         enemy.modifiers = [];
         enemy.resistances = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
-        enemy.statuses = {}; // Reset statuses
+        enemy.statuses = {}; 
+
+        // Animation Init
+        enemy.direction = Math.cos(angle) > 0 ? 'left' : 'right'; // Facing center roughly
+        enemy.animState = 'run';
+        enemy.animFrame = 0;
+        enemy.animTimer = 0;
 
         // Reset timers
         enemy.trailTimer = 0;
         enemy.blastTimer = 0;
 
         if (isElite || (type === 'boss') || this.gameState.currentFloor >= 3) {
-            // Chance to add random modifiers
             const modCount = type === 'boss' ? 3 : isElite ? 2 : 1;
             
             for(let i=0; i<modCount; i++) {
@@ -1171,13 +1199,11 @@ export class GameEngine {
                     if (!enemy.modifiers.includes(mod)) {
                         enemy.modifiers.push(mod);
                         
-                        // Apply Stat changes immediately
                         if (mod === 'fire_res') enemy.resistances.fire = 0.5;
                         if (mod === 'cold_res') enemy.resistances.cold = 0.5;
                         if (mod === 'lightning_res') enemy.resistances.lightning = 0.5;
                         if (mod === 'chaos_res') enemy.resistances.chaos = 0.5;
 
-                        // Temporal Bubble spawn logic
                         if (mod === 'temporal') {
                             this.gameState.groundEffects.push({
                                 id: uuid(),
@@ -1198,11 +1224,9 @@ export class GameEngine {
         enemy.y = this.gameState.playerWorldPos.y + Math.sin(angle) * radius;
     
         if (type === 'boss') {
-            // Increased Attack Delay: Boss 2.0 -> 2.4
             enemy.attackTimer = 2.4;
             this.callbacks.onNotification("BOSS SPAWNED!");
         } else {
-            // Ensure non-bosses don't have an attack timer
             enemy.attackTimer = undefined;
         }
     }
@@ -1225,6 +1249,7 @@ export class GameEngine {
         bullet.damage = damage;
         bullet.pierce = pierce;
         bullet.ailmentChance = ailmentChance;
+        bullet.direction = Math.cos(angle) > 0 ? 'right' : 'left';
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1233,8 +1258,8 @@ export class GameEngine {
         if (tags.includes('fire')) return 'fire';
         if (tags.includes('cold')) return 'cold';
         if (tags.includes('lightning')) return 'lightning';
-        if (tags.includes('projectile') && !tags.includes('physical')) return 'physical'; // Default proj
-        return 'physical'; // Fallback
+        if (tags.includes('projectile') && !tags.includes('physical')) return 'physical'; 
+        return 'physical'; 
     }
 
     private castSkill(skill: ResolvedSkill, speedMult: number) {
@@ -1242,8 +1267,6 @@ export class GameEngine {
         const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
         const dmgType = this.getDamageTypeFromTags(skill.tags);
 
-        // Slow affects cooldown, but visually impacts projectile speed slightly? No, standard logic keeps speed constant.
-        
         if (skill.definition.id === 'cyclone') {
             const radius = skill.stats.areaOfEffect;
             this.visualEffects.push({
@@ -1253,7 +1276,7 @@ export class GameEngine {
                 x: px,
                 y: py,
                 radius: radius,
-                lifeTime: 0.4, // Increased slightly for visual fade
+                lifeTime: 0.4, 
                 maxLifeTime: 0.4,
                 color: '#00ffff',
                 angle: Math.random() * Math.PI * 2,
@@ -1278,9 +1301,6 @@ export class GameEngine {
         let nearest: Enemy | null = null;
         let minDistSq = Infinity;
         
-        // VISUAL RANGE TARGETING
-        // Visual radius is canvas half-width / zoom + margin.
-        // Assuming typical mobile width ~400px (though canvas width varies)
         const canvasWidth = this.canvas ? this.canvas.width : 400;
         const visualRadius = (canvasWidth / 2) / CAMERA_ZOOM + 100; // 100px buffer
         const visualRadiusSq = visualRadius * visualRadius;
@@ -1291,7 +1311,7 @@ export class GameEngine {
           const cy = enemy.y + enemy.height/2;
           const distSq = (cx - px)**2 + (cy - py)**2;
           
-          if (distSq > visualRadiusSq) continue; // Skip off-screen enemies
+          if (distSq > visualRadiusSq) continue; 
 
           if (distSq < minDistSq) { minDistSq = distSq; nearest = enemy; }
         }
@@ -1345,7 +1365,6 @@ export class GameEngine {
         const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
         const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
         
-        // VISUAL RANGE TARGETING for Basic Attack
         const canvasWidth = this.canvas ? this.canvas.width : 400;
         const visualRadius = (canvasWidth / 2) / CAMERA_ZOOM + 100; 
         const visualRadiusSq = visualRadius * visualRadius;
@@ -1356,13 +1375,11 @@ export class GameEngine {
           const cy = enemy.y + enemy.height/2;
           const distSq = (cx - px)**2 + (cy - py)**2;
 
-          if (distSq > visualRadiusSq) continue; // Skip off-screen
+          if (distSq > visualRadiusSq) continue; 
 
           if (distSq < minDistSq) { minDistSq = distSq; nearest = enemy; }
         }
 
-        // Keep 400 range max limit if desired, or let visual range handle it.
-        // Keeping legacy logic constraint:
         if (nearest && minDistSq > 400 * 400) nearest = null;
 
         if (!this.joystickState.active && !nearest) return;
@@ -1376,7 +1393,7 @@ export class GameEngine {
 
         const dmg = this.playerStats.getStatValue('bulletDamage');
         const count = Math.max(1, Math.floor(this.playerStats.getStatValue('projectileCount')));
-        const ailmentChance = this.playerStats.getStatValue('ailmentChance'); // Base chance for basic attack
+        const ailmentChance = this.playerStats.getStatValue('ailmentChance'); 
 
         const speed = 400;
         
@@ -1396,7 +1413,6 @@ export class GameEngine {
     }
 
     private applyDamage(e: Enemy, rawAmount: number, isCrit: boolean, type: DamageType, sourcePos?: Vector2, chance: number = 0) {
-         // 1. Evasive Check (30% Dodge)
          if (e.modifiers.includes('evasive')) {
              if (Math.random() < 0.3) {
                  this.spawnFloatingText(e.x + e.width/2, e.y, "DODGE", "#9ca3af", 1.0);
@@ -1412,7 +1428,6 @@ export class GameEngine {
              const sy = sourcePos.y + PLAYER_SIZE/2;
              const dist = Math.sqrt((cx-sx)**2 + (cy-sy)**2);
 
-             // 2. Proximal Tangibility (Distance > 200 = Immune)
              if (e.modifiers.includes('proximal')) {
                  if (dist > 200) {
                      this.spawnFloatingText(e.x + e.width/2, e.y, "IMMUNE", "#a855f7", 1.0);
@@ -1420,7 +1435,6 @@ export class GameEngine {
                  }
              }
 
-             // 3. Temporal Bubble Defense
              if (e.modifiers.includes('temporal')) {
                  if (dist > 250) {
                      this.spawnFloatingText(e.x + e.width/2, e.y, "BLOCKED", "#d8b4fe", 1.0);
@@ -1429,15 +1443,12 @@ export class GameEngine {
              }
          }
 
-         // 4. Resistance Calculation
          let res = e.resistances[type] || 0;
          
-         // 5. Armor Logic (Only Physical)
          if (type === 'physical' && e.modifiers.includes('armoured')) {
              res += 0.5;
          }
 
-         // Shock: 50% Increased Damage Taken
          let damageMultiplier = 1.0;
          if (e.statuses['shocked']) {
              damageMultiplier = 1.5;
@@ -1445,29 +1456,26 @@ export class GameEngine {
 
          const finalDamage = Math.max(0, rawAmount * (1 - res) * damageMultiplier);
 
-         // 6. Apply
          e.hp -= finalDamage;
 
-         // AILMENT APPLICATION LOGIC
          if (chance > 0 && Math.random() < chance) {
              if (type === 'fire') {
-                 e.statuses['ignited'] = 4.0; // 4s ignite
+                 e.statuses['ignited'] = 4.0; 
                  this.spawnFloatingText(e.x + e.width/2, e.y - 20, "IGNITE", "#fb923c", 0.8);
              } else if (type === 'cold') {
-                 e.statuses['chilled'] = 2.0; // 2s chill
+                 e.statuses['chilled'] = 2.0; 
                  this.spawnFloatingText(e.x + e.width/2, e.y - 20, "CHILL", "#67e8f9", 0.8);
              } else if (type === 'lightning') {
-                 e.statuses['shocked'] = 4.0; // 4s shock
+                 e.statuses['shocked'] = 4.0; 
                  this.spawnFloatingText(e.x + e.width/2, e.y - 20, "SHOCK", "#fde047", 0.8);
              }
          }
 
-         // Color mapping
          let color = 'white';
-         if (type === 'fire') color = '#f97316'; // Orange
-         else if (type === 'cold') color = '#06b6d4'; // Cyan
-         else if (type === 'lightning') color = '#facc15'; // Yellow
-         else if (type === 'chaos') color = '#d946ef'; // Purple
+         if (type === 'fire') color = '#f97316'; 
+         else if (type === 'cold') color = '#06b6d4'; 
+         else if (type === 'lightning') color = '#facc15'; 
+         else if (type === 'chaos') color = '#d946ef'; 
 
          if (isCrit) color = '#ef4444'; 
          
@@ -1476,7 +1484,6 @@ export class GameEngine {
          if (e.hp <= 0) {
             e.active = false;
             
-            // Dynamic XP Calculation
             let typeMult = 1;
             if (e.type === 'fast') typeMult = 1.2;
             else if (e.type === 'tank') typeMult = 3.0;
@@ -1492,10 +1499,8 @@ export class GameEngine {
             this.spawnLoot(e.x, e.y, isBoss, e.isElite ? ELITE_LOOT_CHANCE : LOOT_CHANCE);
             this.gameState.score += (isBoss ? 1000 : 10);
             
-            // Replaced Direct Gain with XP Orb Spawn
             this.spawnXPOrb(e.x + e.width/2, e.y + e.height/2, finalXp);
             
-            // Remove associated bubble if exists
             if (e.modifiers.includes('temporal')) {
                 const bubbleIndex = this.gameState.groundEffects.findIndex(g => g.type === 'bubble' && g.sourceId === e.id);
                 if (bubbleIndex > -1) {
@@ -1503,20 +1508,16 @@ export class GameEngine {
                 }
             }
 
-            // Expedition Progress
             if (this.gameState.expeditionActive) {
                 this.gameState.currentKills += 1;
                 
-                // Portal Logic: Floor 1-4 Kills, Floor 5 Boss
                 const floorObjectiveMet = this.gameState.currentKills >= this.gameState.targetKills;
                 const isBossKill = e.type === 'boss';
                 
-                // Prevent duplicate portal spawns
                 const hasPortal = this.gameState.interactables.some(i => i.type.includes('portal'));
 
                 if (!hasPortal) {
                     if (this.gameState.currentFloor < 5) {
-                        // Standard Floor
                         if (floorObjectiveMet) {
                             this.gameState.interactables.push({
                                 id: uuid() as any,
@@ -1528,12 +1529,12 @@ export class GameEngine {
                                 height: 80,
                                 color: '#3b82f6',
                                 interactionRadius: 80,
-                                label: 'Descend'
+                                label: 'Descend',
+                                direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
                             });
                             this.callbacks.onNotification("Portal Opened");
                         }
                     } else if (this.gameState.currentFloor === 5) {
-                        // Boss Floor
                         if (isBossKill) {
                             this.gameState.interactables.push({
                                 id: uuid() as any,
@@ -1545,7 +1546,8 @@ export class GameEngine {
                                 height: 80,
                                 color: '#22c55e',
                                 interactionRadius: 80,
-                                label: 'Return'
+                                label: 'Return',
+                                direction: 'right', animState: 'idle', animFrame: 0, animTimer: 0
                             });
                             this.callbacks.onNotification("Victory!");
                         }
@@ -1554,6 +1556,44 @@ export class GameEngine {
                 this.updateHud();
             }
          }
+    }
+
+    private updateAnimation(dt: number) {
+        // Update Player Animation
+        this.gameState.animTimer += dt;
+        const playerConfig = this.assetManager.getConfig('player');
+        if (playerConfig) {
+            if (this.gameState.animTimer >= playerConfig.frameRate) {
+                this.gameState.animTimer = 0;
+                this.gameState.animFrame++;
+                if (this.gameState.animFrame >= playerConfig.frameCount) {
+                    this.gameState.animFrame = 0;
+                }
+            }
+        }
+
+        // Update Enemies
+        for (const enemy of this.enemies) {
+            if (!enemy.active) continue;
+            enemy.animTimer = (enemy.animTimer || 0) + dt;
+            
+            // Determine config key
+            let key = 'enemy';
+            if (enemy.type === 'fast') key = 'enemyFast';
+            if (enemy.type === 'tank') key = 'enemyTank';
+            if (enemy.type === 'boss') key = 'enemyBoss';
+
+            const config = this.assetManager.getConfig(key);
+            if (config) {
+                 if (enemy.animTimer >= config.frameRate) {
+                    enemy.animTimer = 0;
+                    enemy.animFrame = (enemy.animFrame || 0) + 1;
+                    if (enemy.animFrame >= config.frameCount) {
+                        enemy.animFrame = 0;
+                    }
+                 }
+            }
+        }
     }
 
     // --- MAIN UPDATE LOOP ---
@@ -1565,6 +1605,8 @@ export class GameEngine {
 
         const dt = Math.min((time - this.gameState.lastFrameTime) / 1000, 0.1);
         this.gameState.lastFrameTime = time;
+
+        this.updateAnimation(dt);
 
         this.timers.frames++;
         this.timers.fpsUpdate += dt;
@@ -1578,7 +1620,6 @@ export class GameEngine {
             this.gameState.playerInvulnerabilityTimer -= dt;
         }
 
-        // 1. Calculate Environment Debuffs (Bubble / Ice Ground)
         let speedMultiplier = 1.0;
         let attackSpeedMultiplier = 1.0;
         const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
@@ -1586,52 +1627,41 @@ export class GameEngine {
         let onIce = false;
         let inBubble = false;
 
-        // Ground Effects Logic
         for (let i = this.gameState.groundEffects.length - 1; i >= 0; i--) {
             const effect = this.gameState.groundEffects[i];
             effect.duration -= dt;
             
-            // Sync Bubble Position
             if (effect.type === 'bubble' && effect.sourceId !== undefined) {
                 const owner = this.enemies.find(e => e.id === effect.sourceId);
                 if (owner && owner.active) {
                     effect.x = owner.x + owner.width/2;
                     effect.y = owner.y + owner.height/2;
                 } else {
-                    effect.duration = 0; // Remove if owner dead
+                    effect.duration = 0; 
                 }
             }
 
-            // Player Intersection
             const dist = Math.sqrt((effect.x - px)**2 + (effect.y - py)**2);
             if (dist < effect.radius) {
                 if (effect.type === 'ice_ground') onIce = true;
                 if (effect.type === 'bubble') inBubble = true;
                 
-                // Ground DoT
                 if (['fire_ground', 'lightning_ground'].includes(effect.type)) {
-                     // 20 damage per second base
                      const dmg = 20 * dt;
-                     // Apply resistance? (Assuming player has 0 res for now, or use map mods)
                      if (this.gameState.playerInvulnerabilityTimer <= 0) {
                         this.currentHp -= dmg;
                         if (this.currentHp <= 0) {
                             this.gameState.isGameOver = true;
                             this.callbacks.onGameOver(true);
                         } else {
-                            // Don't shake/flash for dot tick unless huge, update HUD occasionally?
-                            // For this simple engine, updating hud every frame is okay.
                             this.updateHud(); 
                         }
                      }
                 }
             }
 
-            // Blast Warning Expiry
             if (effect.type === 'blast_warning' && effect.duration <= 0) {
-                 // EXPLODE
                  if (dist < effect.radius) {
-                     // Massive damage to player
                      if (this.gameState.playerInvulnerabilityTimer <= 0) {
                          const dmg = 40 * this.gameState.currentMapStats.monsterDamageMult;
                          this.currentHp -= dmg;
@@ -1646,11 +1676,10 @@ export class GameEngine {
                         }
                      }
                  }
-                 // Visual for explosion
                  this.visualEffects.push({
                     id: Math.random(),
                     active: true,
-                    type: 'hit', // reuse hit type or create explosion
+                    type: 'hit', 
                     x: effect.x,
                     y: effect.y,
                     radius: effect.radius,
@@ -1671,9 +1700,19 @@ export class GameEngine {
             attackSpeedMultiplier *= 0.5;
         }
 
-        // 2. Move Player
         const { vector } = this.joystickState;
         const speed = this.playerStats.getStatValue('moveSpeed') * SPEED_SCALAR * speedMultiplier;
+        
+        // DIRECTION UPDATE
+        if (Math.abs(vector.x) > 0.1) {
+            this.gameState.direction = vector.x > 0 ? 'right' : 'left';
+            this.gameState.animState = 'run';
+        } else if (Math.abs(vector.y) > 0.1) {
+            this.gameState.animState = 'run';
+        } else {
+            this.gameState.animState = 'idle';
+        }
+
         this.gameState.playerWorldPos.x += vector.x * speed * dt;
         this.gameState.playerWorldPos.y += vector.y * speed * dt;
         const playerCenter = {
@@ -1681,7 +1720,6 @@ export class GameEngine {
             y: this.gameState.playerWorldPos.y + PLAYER_SIZE / 2
         };
 
-        // 3. CHECK INTERACTIONS
         let nearestInteractable: Interactable | null = null;
         let minIntDist = Infinity;
         for (const int of this.gameState.interactables) {
@@ -1697,21 +1735,17 @@ export class GameEngine {
         }
         this.callbacks.onNearbyInteractable(nearestInteractable);
 
-        // 4. LOGIC SPLIT: RUN vs HIDEOUT
         if (this.gameState.worldState === 'RUN') {
             const dir = this.directorState;
             dir.gameTime += dt;
             dir.spawnTimer -= dt;
 
-            // FIX: Stop spawning if objective met or boss active
             const objectiveComplete = this.gameState.currentKills >= this.gameState.targetKills;
             const bossActive = this.gameState.currentFloor === 5 && dir.bossSpawned;
             
             if (!objectiveComplete && !bossActive) {
-                // Dynamic Max Enemies: 20 + Floor*10 + Tier*5
-                // Floor 1 Tier 1 = 20 + 10 + 5 = 35
-                // Floor 5 Tier 3 = 20 + 50 + 15 = 85
-                const currentMaxEnemies = 20 + (this.gameState.currentFloor * 10) + (this.gameState.currentMapStats.tier * 5);
+                // INCREASED MAX ENEMIES: 60+
+                const currentMaxEnemies = 60 + (this.gameState.currentFloor * 10) + (this.gameState.currentMapStats.tier * 5);
                 this.gameState.currentMaxEnemies = currentMaxEnemies;
                 
                 const activeEnemyCount = this.enemies.filter(e => e.active).length;
@@ -1722,10 +1756,8 @@ export class GameEngine {
 
                     let spawnTypes: EnemyType[] = ['basic'];
                     
-                    // Dynamic Spawn Interval: 1.0s base * (0.9 ^ Floor)
-                    // Floor 1: ~0.9s
-                    // Floor 5: ~0.59s
-                    let interval = (1.0 * Math.pow(0.9, this.gameState.currentFloor)) / spawnRateMult;
+                    // SPAWN RATE: 0.4s base
+                    let interval = (0.4 * Math.pow(0.9, this.gameState.currentFloor)) / spawnRateMult;
                     
                     const difficultyTime = dir.gameTime + (this.gameState.currentFloor * 30); 
 
@@ -1755,14 +1787,12 @@ export class GameEngine {
             }
         }
 
-        // 5. SKILL SYSTEM UPDATE
         this.gameState.activeSkills.forEach((skillInstance, index) => {
             if (skillInstance.cooldownTimer > 0) {
                 skillInstance.cooldownTimer -= dt;
             }
 
             if (skillInstance.cooldownTimer <= 0) {
-                // Apply attack speed slows
                 const effectiveDt = dt * attackSpeedMultiplier;
 
                 if (skillInstance.activeGem) {
@@ -1780,19 +1810,16 @@ export class GameEngine {
             }
         });
 
-        // 6. Update Visual Effects & Particles
         for (let i = this.visualEffects.length - 1; i >= 0; i--) {
             const eff = this.visualEffects[i];
             eff.lifeTime -= dt;
             
-            // Cyclone Update Logic
             if (eff.type === 'cyclone') {
                 if (eff.angle !== undefined && eff.spinSpeed !== undefined) {
                     eff.angle += eff.spinSpeed * dt;
-                    eff.spinSpeed *= 0.98; // Drag
+                    eff.spinSpeed *= 0.98; 
                 }
                 
-                // Particle Generation
                 if (Math.random() < 0.5) {
                     const r = eff.radius || 100;
                     const theta = Math.random() * Math.PI * 2;
@@ -1807,7 +1834,7 @@ export class GameEngine {
                         vy: Math.sin(theta) * 150,
                         life: 0.3,
                         maxLife: 0.3,
-                        color: '#00ffff', // Cyan sparks
+                        color: '#00ffff', 
                         size: Math.random() * 2 + 1
                     });
                 }
@@ -1818,7 +1845,6 @@ export class GameEngine {
             }
         }
         
-        // Update Particles
         for (let i = this.gameState.particles.length - 1; i >= 0; i--) {
             const p = this.gameState.particles[i];
             p.x += p.vx * dt;
@@ -1829,7 +1855,6 @@ export class GameEngine {
             }
         }
 
-        // 7. Update Entities
         const playerRect = { x: this.gameState.playerWorldPos.x, y: this.gameState.playerWorldPos.y, width: PLAYER_SIZE, height: PLAYER_SIZE, id: -1, active: true, color: '' };
 
         for (const t of this.floatingTexts) {
@@ -1839,7 +1864,6 @@ export class GameEngine {
             if (t.lifeTime <= 0) t.active = false;
         }
 
-        // Update XP Orbs
         for (const orb of this.xpOrbs) {
             if (!orb.active) continue;
             
@@ -1850,7 +1874,7 @@ export class GameEngine {
             if (orb.magnetized || distSq < magnetRadius) {
                 orb.magnetized = true;
                 const dist = Math.sqrt(distSq);
-                const speed = 600 * dt; // Fast movement to player
+                const speed = 600 * dt; 
                 orb.x += ((playerCenter.x - orb.x) / dist) * speed;
                 orb.y += ((playerCenter.y - orb.y) / dist) * speed;
 
@@ -1864,29 +1888,24 @@ export class GameEngine {
         for (const enemy of this.enemies) {
             if (!enemy.active) continue;
 
-            // STATUS UPDATE LOGIC
-            // Ignited: DoT
             if (enemy.statuses['ignited']) {
                 enemy.statuses['ignited'] -= dt;
                 if (enemy.statuses['ignited'] <= 0) {
                     delete enemy.statuses['ignited'];
                 } else {
-                    // Ignite Damage: 20% of Player Base Damage per second (approx)
                     const baseBurn = this.playerStats.getStatValue('bulletDamage') * 0.2;
                     enemy.hp -= baseBurn * dt;
                     if (enemy.hp <= 0) {
-                        this.applyDamage(enemy, 0, false, 'fire', undefined); // Kill trigger logic reuse
+                        this.applyDamage(enemy, 0, false, 'fire', undefined); 
                     }
                 }
             }
 
-            // Chilled
             if (enemy.statuses['chilled']) {
                 enemy.statuses['chilled'] -= dt;
                 if (enemy.statuses['chilled'] <= 0) delete enemy.statuses['chilled'];
             }
 
-            // Shocked
             if (enemy.statuses['shocked']) {
                 enemy.statuses['shocked'] -= dt;
                 if (enemy.statuses['shocked'] <= 0) delete enemy.statuses['shocked'];
@@ -1899,7 +1918,6 @@ export class GameEngine {
                 }
             }
 
-            // TRAIL LOGIC
             if (enemy.modifiers.some(m => m.startsWith('trail_'))) {
                 enemy.trailTimer = (enemy.trailTimer || 0) - dt;
                 if (enemy.trailTimer <= 0) {
@@ -1922,11 +1940,9 @@ export class GameEngine {
                 }
             }
 
-            // PERIODIC BLAST LOGIC
             if (enemy.modifiers.includes('periodic_blast')) {
                 enemy.blastTimer = (enemy.blastTimer || 0) - dt;
                 if (enemy.blastTimer <= 0) {
-                    // Create Warning
                     const angle = Math.random() * Math.PI * 2;
                     const offset = 80;
                     this.gameState.groundEffects.push({
@@ -1936,7 +1952,7 @@ export class GameEngine {
                         radius: 60,
                         type: 'blast_warning',
                         duration: 1.0,
-                        damageType: 'fire' // Default fire blast
+                        damageType: 'fire' 
                     });
                     enemy.blastTimer = 3.0;
                 }
@@ -1952,9 +1968,8 @@ export class GameEngine {
 
             let currentSpeed = enemy.speed;
             
-            // Chill Effect
             if (enemy.statuses['chilled']) {
-                currentSpeed *= 0.7; // 30% Slow
+                currentSpeed *= 0.7; 
             }
 
             if (enemy.modifiers.includes('berserker') && enemy.hp < (enemy.maxHp || 100) * 0.5) {
@@ -1962,6 +1977,14 @@ export class GameEngine {
             }
 
             if (dist > 0) {
+                // Update direction and state
+                if (Math.abs(dx) > 1.0) {
+                    enemy.direction = dx > 0 ? 'right' : 'left'; // Face player
+                    enemy.animState = 'run';
+                } else {
+                    enemy.animState = 'idle';
+                }
+
                 enemy.x += (dx/dist) * currentSpeed * dt;
                 enemy.y += (dy/dist) * currentSpeed * dt;
             }
@@ -1972,7 +1995,7 @@ export class GameEngine {
                     const dmg = (enemy.type === 'boss' ? 50 : 10) * dmgMult;
                     
                     this.currentHp -= dmg;
-                    this.gameState.playerInvulnerabilityTimer = 0.5; // 0.5s i-frame
+                    this.gameState.playerInvulnerabilityTimer = 0.5; 
                     this.triggerShake(0.3);
                     
                     if (this.currentHp <= 0) {
@@ -1984,28 +2007,21 @@ export class GameEngine {
                 }
             }
 
-            // ENEMY SHOOTING LOGIC UPDATE
             if (enemy.attackTimer !== undefined) {
                 enemy.attackTimer -= dt;
                 if (enemy.attackTimer <= 0) {
                     const angle = Math.atan2(dy, dx);
-                    // Reduced Bullet Speed: 300 -> 240
                     const bulletSpeed = 240;
 
-                    // Extra Proj Logic
                     if (enemy.modifiers.includes('extra_proj')) {
-                        // Fan of 3
-                        const spread = 0.2; // Radians
+                        const spread = 0.2; 
                         for(let i = -1; i <= 1; i++) {
                              this.spawnBullet(cx, cy, angle + (i * spread), 'enemy', bulletSpeed, 20, BULLET_BOSS_COLOR, 'physical', 10);
                         }
                     } else {
-                        // Single shot
                         this.spawnBullet(cx, cy, angle, 'enemy', bulletSpeed, 30, BULLET_BOSS_COLOR, 'physical', 10);
                     }
                     
-                    // Reset timer based on type (Logic handled in spawnEnemy for base rate, re-use here? 
-                    // No, usually constant. But let's assume boss attacks faster than normal
                     enemy.attackTimer = enemy.type === 'boss' ? 2.4 : 3.6; 
                 }
             }
@@ -2022,9 +2038,8 @@ export class GameEngine {
             b.lifeTime -= dt;
             if (b.lifeTime <= 0) { b.active = false; continue; }
 
-            // --- FIREBALL TRAIL PARTICLES ---
             if (b.owner === 'player' && b.damageType === 'fire') {
-                const particleCount = Math.floor(Math.random() * 2) + 1; // 1 or 2
+                const particleCount = Math.floor(Math.random() * 2) + 1; 
                 for (let k = 0; k < particleCount; k++) {
                     const cx = b.x + b.width / 2;
                     const cy = b.y + b.height / 2;
@@ -2032,9 +2047,9 @@ export class GameEngine {
                         id: Math.random(),
                         x: cx + (Math.random() - 0.5) * 10,
                         y: cy + (Math.random() - 0.5) * 10,
-                        vx: -b.vx * 0.5 + (Math.random() - 0.5) * 100, // Diffusion
+                        vx: -b.vx * 0.5 + (Math.random() - 0.5) * 100, 
                         vy: -b.vy * 0.5 + (Math.random() - 0.5) * 100,
-                        life: 0.3 + Math.random() * 0.2, // 0.3 - 0.5s
+                        life: 0.3 + Math.random() * 0.2, 
                         maxLife: 0.5,
                         color: Math.random() > 0.5 ? '#ffaa00' : '#ff4400',
                         size: Math.random() * 6 + 4
@@ -2054,32 +2069,27 @@ export class GameEngine {
                             continue;
                         }
 
-                        // Bubble Check: If target e is inside a bubble, and bullet is from outside, destroy
                         const cx = e.x + e.width/2;
                         const cy = e.y + e.height/2;
                         
                         if (e.modifiers.includes('temporal')) {
-                            // Distance from player to enemy
                             const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
                             const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
                             const distToPlayer = Math.sqrt((cx-px)**2 + (cy-py)**2);
                             if (distToPlayer > 250) {
-                                // Blocked
                                 b.active = false;
                                 this.spawnFloatingText(e.x + e.width/2, e.y, "BLOCKED", "#d8b4fe", 1.0);
                                 break; 
                             }
                         }
                         
-                        // Mark hit
                         b.hitIds.push(e.id);
                         
                         const isCrit = Math.random() < pCritC;
-                        const finalDmg = (b.damage || pDmg) * (isCrit ? pCritM : 1.0); // Use snapshot damage if available
+                        const finalDmg = (b.damage || pDmg) * (isCrit ? pCritM : 1.0); 
 
                         this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
                         
-                        // Pierce Logic
                         if (b.pierce > 0) {
                             b.pierce--;
                         } else {
@@ -2090,7 +2100,6 @@ export class GameEngine {
                 }
             } else {
                 if (this.checkCollision(b, playerRect)) {
-                    // Bullet damage logic
                      if (this.gameState.playerInvulnerabilityTimer <= 0) {
                         const dmgMult = this.gameState.currentMapStats.monsterDamageMult;
                         this.currentHp -= 10 * dmgMult;
@@ -2136,7 +2145,7 @@ export class GameEngine {
 
     public handleInteract = (int: Interactable) => {
         if (int.type === 'map_device') {
-            // Handled by UI State toggle in App/Component, GameEngine just pauses
+            // Handled by UI State toggle
         } else if (int.type === 'portal_next') {
             this.enterNextFloor();
         } else if (int.type === 'portal_return') {
@@ -2193,11 +2202,37 @@ export class GameEngine {
         }
         ctx.stroke();
 
-        const drawSprite = (key: string, x: number, y: number, w: number, h: number, color: string) => {
-            const img = this.images[key];
-            if (img && this.assetsLoaded) {
-                ctx.drawImage(img, x, y, w, h);
+        // New Rendering Helper with Animation Support
+        const renderEntity = (key: string, x: number, y: number, w: number, h: number, color: string, direction: 'left' | 'right' = 'right', frame: number = 0) => {
+            const img = this.assetManager.get(key);
+            const config = this.assetManager.getConfig(key);
+            
+            if (img && config && this.assetsLoaded) {
+                ctx.save();
+                // Move to center of entity
+                ctx.translate(x + w/2, y + h/2);
+                
+                if (direction === 'left') {
+                    ctx.scale(-1, 1);
+                }
+                
+                // Draw Image centered
+                // Source X = frame index * width
+                const sx = frame * config.frameWidth;
+                
+                try {
+                    ctx.drawImage(
+                        img, 
+                        sx, 0, config.frameWidth, config.frameHeight, 
+                        -w/2, -h/2, w, h
+                    );
+                } catch (e) {
+                    // Fallback if coordinates invalid (race condition during load)
+                }
+                
+                ctx.restore();
             } else {
+                // Fallback Box
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, w, h);
             }
@@ -2225,7 +2260,6 @@ export class GameEngine {
                 ctx.strokeStyle = '#cffafe';
                 ctx.lineWidth = 2;
                 ctx.stroke();
-                // Ice texture
                 ctx.fillStyle = 'white';
                 for(let k=0; k<3; k++) {
                     ctx.fillRect(Math.random()*effect.radius - effect.radius/2, Math.random()*effect.radius - effect.radius/2, 4, 4);
@@ -2245,7 +2279,6 @@ export class GameEngine {
                  }
             }
             else if (effect.type === 'bubble') {
-                // Large temporal bubble
                 const rot = Date.now()/1000;
                 ctx.strokeStyle = '#a855f7';
                 ctx.lineWidth = 4;
@@ -2256,7 +2289,6 @@ export class GameEngine {
                 ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
                 ctx.fill();
 
-                // Rotating internal ring
                 ctx.beginPath();
                 ctx.arc(0, 0, effect.radius * 0.9, rot, rot + Math.PI);
                 ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
@@ -2264,15 +2296,14 @@ export class GameEngine {
                 ctx.stroke();
             }
             else if (effect.type === 'blast_warning') {
-                // Expanding circle logic relative to remaining duration
-                const pct = 1.0 - effect.duration; // 0 to 1 as it nears expiry (assuming 1s duration)
+                const pct = 1.0 - effect.duration; 
                 ctx.fillStyle = `rgba(239, 68, 68, ${0.2 + pct*0.3})`;
                 ctx.beginPath();
                 ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
                 ctx.fill();
                 
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius * pct, 0, Math.PI * 2); // Inner expanding circle
+                ctx.arc(0, 0, effect.radius * pct, 0, Math.PI * 2);
                 ctx.strokeStyle = '#ef4444';
                 ctx.lineWidth = 2;
                 ctx.stroke();
@@ -2286,14 +2317,12 @@ export class GameEngine {
             ctx.save();
             ctx.translate(npc.x + npc.width/2, npc.y + npc.height/2);
             
-            // Draw Range Circle (Subtle)
             ctx.beginPath();
             ctx.arc(0, 0, npc.interactionRadius, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(34, 197, 94, 0.3)';
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Draw NPC Body
             ctx.fillStyle = npc.color;
             ctx.beginPath();
             ctx.arc(0, 0, npc.width/2, 0, Math.PI * 2);
@@ -2306,7 +2335,6 @@ export class GameEngine {
             ctx.textBaseline = 'middle';
             ctx.fillText("💰", 0, 2);
 
-            // Name Tag
             ctx.fillStyle = '#22c55e';
             ctx.font = 'bold 12px sans-serif';
             ctx.shadowBlur = 0;
@@ -2344,7 +2372,6 @@ export class GameEngine {
                 ctx.shadowBlur = 20;
                 ctx.shadowColor = int.color;
                 
-                // Rotating Portal
                 const t = Date.now() / 500;
                 ctx.scale(1 + Math.sin(t)*0.1, 1 + Math.sin(t)*0.1);
 
@@ -2361,8 +2388,7 @@ export class GameEngine {
             ctx.save();
             ctx.translate(orb.x, orb.y);
             
-            // Config based on tier
-            let color = '#3b82f6'; // Blue
+            let color = '#3b82f6';
             let radius = 4;
             let shadowColor = '#60a5fa';
             
@@ -2370,20 +2396,17 @@ export class GameEngine {
             if (orb.tier === 'pink') { color = '#ec4899'; radius = 6; shadowColor = '#f472b6'; }
             if (orb.tier === 'gold') { color = '#eab308'; radius = 8; shadowColor = '#facc15'; }
 
-            // Pulse
             const pulse = Math.sin(Date.now() / 200) * 1.5;
             
             ctx.shadowBlur = 10;
             ctx.shadowColor = shadowColor;
             ctx.fillStyle = color;
             
-            // Glow Core
             ctx.globalCompositeOperation = 'lighter';
             ctx.beginPath();
             ctx.arc(0, 0, radius + pulse, 0, Math.PI * 2);
             ctx.fill();
             
-            // White Center for pop
             ctx.fillStyle = 'white';
             ctx.globalAlpha = 0.6;
             ctx.beginPath();
@@ -2405,40 +2428,32 @@ export class GameEngine {
                 const radius = eff.radius || 100;
                 const lifeRatio = eff.lifeTime / eff.maxLifeTime;
 
-                // Blend mode
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.globalAlpha = Math.max(0, lifeRatio);
                 
-                // LAYER 1: Main Blades (Divine / Aether Style)
                 ctx.save();
                 ctx.rotate(angle);
                 ctx.shadowBlur = 15;
-                ctx.shadowColor = '#00ffff'; // Cyan Glow
+                ctx.shadowColor = '#00ffff'; 
 
                 for (let k = 0; k < 3; k++) {
                     ctx.save();
                     ctx.rotate((Math.PI * 2 / 3) * k);
 
-                    // Gradient: White -> Cyan -> DarkBlue -> Transparent
                     const grad = ctx.createLinearGradient(0, 0, radius, 0);
                     grad.addColorStop(0, 'white');
                     grad.addColorStop(0.3, '#00ffff');
-                    grad.addColorStop(0.7, '#00008b'); // Dark Blue
+                    grad.addColorStop(0.7, '#00008b'); 
                     grad.addColorStop(1, 'rgba(0,0,139,0)');
 
                     ctx.fillStyle = grad;
                     
-                    // High-light edge
                     ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
                     ctx.lineWidth = 1;
 
-                    // "Slash" Shape
                     ctx.beginPath();
-                    // Start near center
                     ctx.moveTo(radius * 0.2, 0);
-                    // Curve OUT to tip (Upper Edge)
                     ctx.bezierCurveTo(radius * 0.5, radius * 0.4, radius * 0.9, radius * 0.2, radius, 0);
-                    // Curve BACK (Lower/Inner Edge)
                     ctx.bezierCurveTo(radius * 0.8, -radius * 0.1, radius * 0.4, -radius * 0.1, radius * 0.2, 0);
                     ctx.closePath();
 
@@ -2448,7 +2463,6 @@ export class GameEngine {
                 }
                 ctx.restore();
 
-                // LAYER 2: Outer Wind (Lagging slightly behind)
                 ctx.save();
                 ctx.rotate(angle - 0.5);
                 ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
@@ -2456,7 +2470,6 @@ export class GameEngine {
                 ctx.shadowBlur = 0;
                 for (let i = 0; i < 4; i++) {
                     ctx.beginPath();
-                    // Random arcs at edge
                     const r = radius * (0.8 + Math.random() * 0.3);
                     const start = Math.random() * Math.PI * 2;
                     const len = 0.5 + Math.random();
@@ -2465,7 +2478,6 @@ export class GameEngine {
                 }
                 ctx.restore();
 
-                // LAYER 3: Inner Core (Counter-rotating)
                 ctx.save();
                 ctx.rotate(-angle * 0.5);
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
@@ -2479,7 +2491,6 @@ export class GameEngine {
                 }
                 ctx.restore();
 
-                // Reset
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 1.0;
                 ctx.restore();
@@ -2491,7 +2502,7 @@ export class GameEngine {
                 ctx.globalAlpha = progress;
                 ctx.fillStyle = eff.color;
                 ctx.beginPath();
-                ctx.arc(0, 0, eff.radius! * (1.5 - progress), 0, Math.PI * 2); // Expanding
+                ctx.arc(0, 0, eff.radius! * (1.5 - progress), 0, Math.PI * 2); 
                 ctx.fill();
                 ctx.restore();
             }
@@ -2505,7 +2516,6 @@ export class GameEngine {
             ctx.globalAlpha = lifeRatio;
             ctx.fillStyle = p.color;
             ctx.beginPath();
-            // Scale size by life
             const size = p.size * lifeRatio; 
             ctx.rect(-size/2, -size/2, size, size);
             ctx.fill();
@@ -2545,6 +2555,9 @@ export class GameEngine {
                  ctx.globalAlpha = 1.0;
             }
 
+            // Using crate sprite for loot box visual
+            renderEntity('crate', l.x, l.y, l.width, l.height, color);
+
             const pulse = Math.sin(time / 200) * 2; 
             const radius = 15 + pulse;
             
@@ -2557,11 +2570,6 @@ export class GameEngine {
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.stroke();
 
-            ctx.fillStyle = color;
-            ctx.globalAlpha = 0.2;
-            ctx.fill();
-            
-            ctx.globalAlpha = 1.0;
             ctx.shadowBlur = 0;
             ctx.fillStyle = 'white';
             ctx.font = '20px sans-serif';
@@ -2609,11 +2617,10 @@ export class GameEngine {
             
             if (e.modifiers.includes('ghostly')) ctx.globalAlpha = 0.6;
             
-            drawSprite(key, e.x, e.y, e.width, e.height, ENEMY_COLOR);
+            renderEntity(key, e.x, e.y, e.width, e.height, ENEMY_COLOR, e.direction, e.animFrame);
             
             ctx.globalAlpha = 1.0; 
 
-            // DRAW STATUS EFFECTS
             if (Object.keys(e.statuses).length > 0) {
                 const cx = e.x + e.width/2;
                 const cy = e.y + e.height/2;
@@ -2680,14 +2687,12 @@ export class GameEngine {
             if (!b.active) continue;
 
             if (b.owner === 'player' && b.damageType === 'fire') {
-                // --- FIREBALL RENDER ---
                 const cx = b.x + b.width / 2;
                 const cy = b.y + b.height / 2;
                 
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
                 
-                // Projectile Head
                 const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, 15);
                 grad.addColorStop(0, 'white');
                 grad.addColorStop(0.4, 'yellow');
@@ -2703,17 +2708,17 @@ export class GameEngine {
             } else {
                 const key = b.owner === 'enemy' ? 'bulletBoss' : 'bullet';
                 const color = b.color ? b.color : (b.owner === 'enemy' ? BULLET_BOSS_COLOR : '#facc15'); 
-                drawSprite(key, b.x, b.y, b.width, b.height, color);
+                renderEntity(key, b.x, b.y, b.width, b.height, color, b.direction, b.animFrame);
             }
         }
 
-        // Draw Player and Invulnerability Effect
+        // Draw Player with Animation
         if (this.gameState.playerInvulnerabilityTimer > 0) {
             if (Math.floor(Date.now() / 100) % 2 === 0) {
-                drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
+                renderEntity('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR, this.gameState.direction, this.gameState.animFrame);
             }
         } else {
-             drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
+            renderEntity('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR, this.gameState.direction, this.gameState.animFrame);
         }
 
         for (const t of this.floatingTexts) {
