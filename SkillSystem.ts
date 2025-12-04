@@ -41,7 +41,7 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
         id: 'nova',
         name: 'Ice Nova',
         type: 'active',
-        tags: ['area', 'projectile'], 
+        tags: ['area', 'projectile', 'cold'], 
         description: 'Explodes projectiles in a circle.',
         baseStats: {
             damage: 20,
@@ -166,7 +166,8 @@ export class SkillManager {
             projectileCount: definition.baseStats.projectileCount || 0,
             projectileSpeed: definition.baseStats.projectileSpeed || 0,
             projectileSpread: definition.baseStats.projectileSpread || 0,
-            duration: definition.baseStats.duration || 0
+            duration: definition.baseStats.duration || 0,
+            ailmentChance: 0
         };
 
         const activeTags = definition.tags; // This is the context for StatsSystem
@@ -219,6 +220,9 @@ export class SkillManager {
         // If stats says "1" (base), we add 0 extra. If stats says "2" (base 1 + 1 extra), we add 1.
         const playerProjCount = playerStats.getStatValue('projectileCount', activeTags); 
         finalStats.projectileCount += (playerProjCount - 1);
+        
+        // Ailment Chance
+        finalStats.ailmentChance = playerStats.getStatValue('ailmentChance', activeTags);
         
         return {
             definition: definition,

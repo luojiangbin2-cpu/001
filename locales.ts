@@ -1,4 +1,5 @@
 
+
 export const TRANSLATIONS = {
   en: {
     // UI Buttons
@@ -17,6 +18,7 @@ export const TRANSLATIONS = {
     stat_crit_chance: "Crit %",
     stat_move_spd: "Move Spd",
     stat_crit_mult: "Crit Mult",
+    stat_ailment: "Ailment %",
     
     // Item Types & Rarities
     item_helmet: "Helmet",
@@ -146,6 +148,7 @@ export const TRANSLATIONS = {
     stat_crit_chance: "暴击率",
     stat_move_spd: "移速",
     stat_crit_mult: "暴击伤害",
+    stat_ailment: "异常几率",
     
     // Item Types & Rarities
     item_helmet: "头盔",

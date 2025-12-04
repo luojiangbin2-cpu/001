@@ -1,3 +1,5 @@
+
+
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -334,13 +336,14 @@ export class GameEngine {
                 id: i, active: false, x: 0, y: 0, width: 0, height: 0, color: ENEMY_COLOR, 
                 hp: 0, speed: 0, type: 'basic', maxHp: 0, attackTimer: undefined,
                 modifiers: [], isElite: false,
-                resistances: { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 }
+                resistances: { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 },
+                statuses: {}
             });
         }
         for (let i = 0; i < MAX_BULLETS; i++) {
             this.bullets.push({ 
                 id: i, active: false, x: 0, y: 0, width: 0, height: 0, color: '#000', 
-                vx: 0, vy: 0, lifeTime: 0, owner: 'player', hitIds: [], damageType: 'physical', pierce: 0
+                vx: 0, vy: 0, lifeTime: 0, owner: 'player', hitIds: [], damageType: 'physical', pierce: 0, ailmentChance: 0
             });
         }
         
@@ -760,6 +763,8 @@ export class GameEngine {
         this.playerStats.setBase('critChance', 0.05);
         this.playerStats.setBase('critMultiplier', 1.5);
         this.playerStats.setBase('defense', 0);
+        // Base Ailment Chance = 15%
+        this.playerStats.setBase('ailmentChance', 0.15);
   
         for (const upg of this.chosenUpgrades) {
             if (upg.stat && upg.type && upg.value) {
@@ -1150,6 +1155,8 @@ export class GameEngine {
         // Modifiers Logic
         enemy.modifiers = [];
         enemy.resistances = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
+        enemy.statuses = {}; // Reset statuses
+
         // Reset timers
         enemy.trailTimer = 0;
         enemy.blastTimer = 0;
@@ -1200,7 +1207,7 @@ export class GameEngine {
         }
     }
 
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0) {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0) {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -1217,6 +1224,7 @@ export class GameEngine {
         bullet.damageType = damageType;
         bullet.damage = damage;
         bullet.pierce = pierce;
+        bullet.ailmentChance = ailmentChance;
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1314,7 +1322,7 @@ export class GameEngine {
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
 
             for (let i = 0; i < safeCount; i++) {
-                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, 0);
+                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, 0, skill.stats.ailmentChance);
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -1368,13 +1376,15 @@ export class GameEngine {
 
         const dmg = this.playerStats.getStatValue('bulletDamage');
         const count = Math.max(1, Math.floor(this.playerStats.getStatValue('projectileCount')));
+        const ailmentChance = this.playerStats.getStatValue('ailmentChance'); // Base chance for basic attack
+
         const speed = 400;
         
         const spreadRad = 0.1; 
         const startAngle = angle - ((count - 1) * spreadRad) / 2;
 
         for (let i = 0; i < count; i++) {
-            this.spawnBullet(px, py, startAngle + i * spreadRad, 'player', speed, 12, '#93c5fd', 'physical', dmg, 0);
+            this.spawnBullet(px, py, startAngle + i * spreadRad, 'player', speed, 12, '#93c5fd', 'physical', dmg, 0, ailmentChance);
         }
     }
 
@@ -1382,10 +1392,10 @@ export class GameEngine {
         const isCrit = Math.random() < this.playerStats.getStatValue('critChance');
         const mult = isCrit ? this.playerStats.getStatValue('critMultiplier') : 1.0;
         const damage = skill.stats.damage * mult;
-        this.applyDamage(e, damage, isCrit, type, this.gameState.playerWorldPos);
+        this.applyDamage(e, damage, isCrit, type, this.gameState.playerWorldPos, skill.stats.ailmentChance);
     }
 
-    private applyDamage(e: Enemy, rawAmount: number, isCrit: boolean, type: DamageType, sourcePos?: Vector2) {
+    private applyDamage(e: Enemy, rawAmount: number, isCrit: boolean, type: DamageType, sourcePos?: Vector2, chance: number = 0) {
          // 1. Evasive Check (30% Dodge)
          if (e.modifiers.includes('evasive')) {
              if (Math.random() < 0.3) {
@@ -1411,8 +1421,6 @@ export class GameEngine {
              }
 
              // 3. Temporal Bubble Defense
-             // If Enemy has 'temporal' mod, there should be a bubble attached to it.
-             // If source is OUTSIDE the bubble radius (250) and target is INSIDE (implied since target is the source of bubble), negate damage.
              if (e.modifiers.includes('temporal')) {
                  if (dist > 250) {
                      this.spawnFloatingText(e.x + e.width/2, e.y, "BLOCKED", "#d8b4fe", 1.0);
@@ -1426,16 +1434,33 @@ export class GameEngine {
          
          // 5. Armor Logic (Only Physical)
          if (type === 'physical' && e.modifiers.includes('armoured')) {
-             // Simplify armor to 50% DR for 'armoured' mobs
              res += 0.5;
          }
 
-         // Chaos ignores Energy Shield (conceptually), just straight resistance here
-         // Cap resistance logic if needed, but for now simple math
-         const finalDamage = Math.max(0, rawAmount * (1 - res));
+         // Shock: 50% Increased Damage Taken
+         let damageMultiplier = 1.0;
+         if (e.statuses['shocked']) {
+             damageMultiplier = 1.5;
+         }
+
+         const finalDamage = Math.max(0, rawAmount * (1 - res) * damageMultiplier);
 
          // 6. Apply
          e.hp -= finalDamage;
+
+         // AILMENT APPLICATION LOGIC
+         if (chance > 0 && Math.random() < chance) {
+             if (type === 'fire') {
+                 e.statuses['ignited'] = 4.0; // 4s ignite
+                 this.spawnFloatingText(e.x + e.width/2, e.y - 20, "IGNITE", "#fb923c", 0.8);
+             } else if (type === 'cold') {
+                 e.statuses['chilled'] = 2.0; // 2s chill
+                 this.spawnFloatingText(e.x + e.width/2, e.y - 20, "CHILL", "#67e8f9", 0.8);
+             } else if (type === 'lightning') {
+                 e.statuses['shocked'] = 4.0; // 4s shock
+                 this.spawnFloatingText(e.x + e.width/2, e.y - 20, "SHOCK", "#fde047", 0.8);
+             }
+         }
 
          // Color mapping
          let color = 'white';
@@ -1839,6 +1864,34 @@ export class GameEngine {
         for (const enemy of this.enemies) {
             if (!enemy.active) continue;
 
+            // STATUS UPDATE LOGIC
+            // Ignited: DoT
+            if (enemy.statuses['ignited']) {
+                enemy.statuses['ignited'] -= dt;
+                if (enemy.statuses['ignited'] <= 0) {
+                    delete enemy.statuses['ignited'];
+                } else {
+                    // Ignite Damage: 20% of Player Base Damage per second (approx)
+                    const baseBurn = this.playerStats.getStatValue('bulletDamage') * 0.2;
+                    enemy.hp -= baseBurn * dt;
+                    if (enemy.hp <= 0) {
+                        this.applyDamage(enemy, 0, false, 'fire', undefined); // Kill trigger logic reuse
+                    }
+                }
+            }
+
+            // Chilled
+            if (enemy.statuses['chilled']) {
+                enemy.statuses['chilled'] -= dt;
+                if (enemy.statuses['chilled'] <= 0) delete enemy.statuses['chilled'];
+            }
+
+            // Shocked
+            if (enemy.statuses['shocked']) {
+                enemy.statuses['shocked'] -= dt;
+                if (enemy.statuses['shocked'] <= 0) delete enemy.statuses['shocked'];
+            }
+
             if (enemy.modifiers.includes('regenerator')) {
                 const regenAmount = (enemy.maxHp || 10) * 0.05 * dt;
                 if (enemy.hp < enemy.maxHp!) {
@@ -1898,6 +1951,12 @@ export class GameEngine {
             const dist = Math.sqrt(dx*dx + dy*dy);
 
             let currentSpeed = enemy.speed;
+            
+            // Chill Effect
+            if (enemy.statuses['chilled']) {
+                currentSpeed *= 0.7; // 30% Slow
+            }
+
             if (enemy.modifiers.includes('berserker') && enemy.hp < (enemy.maxHp || 100) * 0.5) {
                 currentSpeed *= 2;
             }
@@ -2018,7 +2077,7 @@ export class GameEngine {
                         const isCrit = Math.random() < pCritC;
                         const finalDmg = (b.damage || pDmg) * (isCrit ? pCritM : 1.0); // Use snapshot damage if available
 
-                        this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos);
+                        this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
                         
                         // Pierce Logic
                         if (b.pierce > 0) {
@@ -2553,6 +2612,34 @@ export class GameEngine {
             drawSprite(key, e.x, e.y, e.width, e.height, ENEMY_COLOR);
             
             ctx.globalAlpha = 1.0; 
+
+            // DRAW STATUS EFFECTS
+            if (Object.keys(e.statuses).length > 0) {
+                const cx = e.x + e.width/2;
+                const cy = e.y + e.height/2;
+                
+                if (e.statuses['ignited']) {
+                    ctx.strokeStyle = '#f97316';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, e.width/2 + 5, 0, Math.PI*2);
+                    ctx.stroke();
+                }
+                if (e.statuses['chilled']) {
+                    ctx.strokeStyle = '#22d3ee';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, e.width/2 + 8, 0, Math.PI*2);
+                    ctx.stroke();
+                }
+                if (e.statuses['shocked']) {
+                    ctx.strokeStyle = '#facc15';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, e.width/2 + 11, 0, Math.PI*2);
+                    ctx.stroke();
+                }
+            }
 
             if (e.isElite) {
                 ctx.strokeStyle = ELITE_COLOR;

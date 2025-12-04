@@ -21,6 +21,8 @@ export class StatsSystem {
   reset() {
     this._bases.clear();
     this._modifiers = [];
+    // Initialize default ailment chance as requested (15%)
+    this.setBase('ailmentChance', 0.15);
   }
 
   /**

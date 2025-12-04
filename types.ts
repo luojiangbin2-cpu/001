@@ -78,6 +78,9 @@ export type EnemyModifier =
 // New Damage Types
 export type DamageType = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos';
 
+// New Status Types
+export type EnemyStatus = 'ignited' | 'chilled' | 'shocked';
+
 export interface Enemy extends Entity {
   hp: number;
   speed: number;
@@ -87,6 +90,7 @@ export interface Enemy extends Entity {
   modifiers: EnemyModifier[];
   isElite: boolean;
   resistances: Record<DamageType, number>;
+  statuses: Partial<Record<EnemyStatus, number>>; // Key: Status, Value: Duration (seconds)
   // Ability Timers
   trailTimer?: number;
   blastTimer?: number;
@@ -103,6 +107,7 @@ export interface Bullet extends Entity {
   damageType: DamageType; 
   damage?: number; 
   pierce: number;
+  ailmentChance?: number; // New: Snapshot chance to apply ailment
 }
 
 // --- GROUND EFFECTS ---
@@ -139,7 +144,7 @@ export interface FloatingText {
 }
 
 export type UpgradeType = 'base' | 'increased' | 'more';
-export type StatKey = 'moveSpeed' | 'attackSpeed' | 'bulletDamage' | 'projectileCount' | 'projectileSpread' | 'maxHp' | 'hpRegen' | 'critChance' | 'critMultiplier' | 'defense' | 'areaOfEffect' | 'projectileSpeed';
+export type StatKey = 'moveSpeed' | 'attackSpeed' | 'bulletDamage' | 'projectileCount' | 'projectileSpread' | 'maxHp' | 'hpRegen' | 'critChance' | 'critMultiplier' | 'defense' | 'areaOfEffect' | 'projectileSpeed' | 'ailmentChance';
 
 // New StatKeys for Maps
 export type MapStatKey = 'monsterPackSize' | 'monsterHealth' | 'monsterDamage' | 'xpGain' | 'itemRarity';
@@ -213,6 +218,7 @@ export interface SkillStats {
     projectileSpeed: number;
     projectileSpread: number; 
     duration: number;
+    ailmentChance: number; // New: Chance to apply status (0-1)
 }
 
 export interface SkillDefinition {

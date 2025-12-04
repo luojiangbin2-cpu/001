@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
@@ -882,6 +883,9 @@ export const GameCanvas: React.FC = () => {
                                             <span>Rate: {resolved.stats.attackRate.toFixed(2)}/s</span>
                                             <span>Proj: {resolved.stats.projectileCount}</span>
                                             <span>Area: {resolved.stats.areaOfEffect}</span>
+                                            {resolved.stats.ailmentChance > 0 && (
+                                                <span className="text-yellow-400">{t('stat_ailment', language)}: {(resolved.stats.ailmentChance * 100).toFixed(0)}%</span>
+                                            )}
                                             <span className="col-span-2 text-[10px] text-zinc-500 mt-1">Tags: {resolved.tags.join(', ')}</span>
                                         </div>
                                     </div>
