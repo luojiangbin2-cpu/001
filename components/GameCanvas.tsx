@@ -36,6 +36,9 @@ export const GameCanvas: React.FC = () => {
   // New: Map Device State
   const [selectedMap, setSelectedMap] = useState<ItemInstance | null>(null);
 
+  // New: Inventory Tabs
+  const [inventoryTab, setInventoryTab] = useState<'equipment' | 'map'>('equipment');
+
   // New: Backpack Pagination
   const [backpackPage, setBackpackPage] = useState(0);
   const ITEMS_PER_PAGE = 50;
@@ -351,7 +354,14 @@ export const GameCanvas: React.FC = () => {
       if (touchStart === null) return;
       const touchEnd = e.changedTouches[0].clientX;
       const diff = touchStart - touchEnd;
-      const totalPages = Math.ceil(BACKPACK_CAPACITY / ITEMS_PER_PAGE);
+
+      let count = 0;
+      if (engineRef.current) {
+         const backpack = engineRef.current.gameState.backpack;
+         if (inventoryTab === 'equipment') count = backpack.filter(i => i.type === 'equipment').length;
+         else if (inventoryTab === 'map') count = backpack.filter(i => i.type === 'map').length;
+      }
+      const totalPages = Math.ceil(Math.max(1, count) / ITEMS_PER_PAGE);
 
       if (diff > 50) {
           // Swipe Left -> Next Page
@@ -376,18 +386,31 @@ export const GameCanvas: React.FC = () => {
       return item.name;
   };
 
+  const getItemIcon = (item: ItemInstance) => {
+    if (item.type === 'map') return '📜';
+    switch (item.slot) {
+        case 'weapon': return '⚔️';
+        case 'offhand': return '🛡️';
+        case 'helmet': return '🪖';
+        case 'body': return '👕';
+        case 'gloves': return '🧤';
+        case 'boots': return '👢';
+        case 'ring1': 
+        case 'ring2': 
+        case 'amulet': return '💍';
+        default: return '❓';
+    }
+  }
+
   const getAbbreviation = (name: string, item?: ItemInstance) => {
     if (item) {
-        // Use localized display name as base for abbreviation
-        const displayName = getDisplayName(item);
         if (item.type === 'gem') {
-            return language === 'zh' ? displayName.substring(0, 2) : displayName.substring(0, 3);
+            return language === 'zh' ? getDisplayName(item).substring(0, 2) : name.substring(0, 3);
         }
+        // Fallback for equipment if icon fails, though we use emoji now
+        const displayName = getDisplayName(item);
         if (language === 'zh') return displayName.substring(0, 2);
-        
-        // English Equipment fallback
-        const parts = displayName.split(" ");
-        return parts.length > 1 ? parts[parts.length-1].substring(0, 3) : displayName.substring(0, 3);
+        return displayName.substring(0, 3);
     }
     return name.substring(0, 3);
   };
@@ -397,14 +420,13 @@ export const GameCanvas: React.FC = () => {
   const renderSlot = (slot: ItemSlot, item: ItemInstance | null | undefined, sizeClass: string = 'aspect-square') => {
     let borderColor = "border-neutral-700";
     let bgColor = "bg-neutral-900";
-    let textColor = "text-neutral-500";
     let shadow = "";
 
     if (item) {
-        if (item.rarity === 'normal') { borderColor = "border-neutral-400"; textColor = "text-neutral-200"; bgColor="bg-neutral-800"; }
-        if (item.rarity === 'magic') { borderColor = "border-blue-500"; textColor = "text-blue-300"; bgColor="bg-blue-900/30"; shadow="shadow-[0_0_10px_rgba(59,130,246,0.3)]"; }
-        if (item.rarity === 'rare') { borderColor = "border-yellow-500"; textColor = "text-yellow-300"; bgColor="bg-yellow-900/30"; shadow="shadow-[0_0_10px_rgba(234,179,8,0.3)]"; }
-        if (item.rarity === 'unique') { borderColor = "border-orange-600"; textColor = "text-orange-400"; bgColor="bg-orange-900/30"; shadow="shadow-[0_0_10px_rgba(234,88,12,0.5)]"; }
+        if (item.rarity === 'normal') { borderColor = "border-neutral-400"; bgColor="bg-neutral-800"; }
+        if (item.rarity === 'magic') { borderColor = "border-blue-500"; bgColor="bg-blue-900/30"; shadow="shadow-[0_0_10px_rgba(59,130,246,0.3)]"; }
+        if (item.rarity === 'rare') { borderColor = "border-yellow-500"; bgColor="bg-yellow-900/30"; shadow="shadow-[0_0_10px_rgba(234,179,8,0.3)]"; }
+        if (item.rarity === 'unique') { borderColor = "border-orange-600"; bgColor="bg-orange-900/30"; shadow="shadow-[0_0_10px_rgba(234,88,12,0.5)]"; }
     }
 
     return (
@@ -416,8 +438,8 @@ export const GameCanvas: React.FC = () => {
         >
             {!item && <span className="text-[9px] text-neutral-600 uppercase font-bold tracking-widest">{t(`item_${slot}` as any, language).substring(0, 3)}</span>}
             {item && (
-                <div className={`text-[10px] sm:text-xs font-bold text-center leading-none ${textColor} drop-shadow-md break-all px-1`}>
-                    {getAbbreviation(item.name, item)}
+                <div className="text-xl sm:text-2xl drop-shadow-md">
+                    {getItemIcon(item)}
                 </div>
             )}
         </div>
@@ -481,7 +503,16 @@ export const GameCanvas: React.FC = () => {
 
   const isSelectingSupport = engineRef.current?.gameState.isSelectingSupport;
   const pendingGem = engineRef.current?.gameState.pendingSupportGem;
-  const totalBackpackPages = Math.ceil(BACKPACK_CAPACITY / ITEMS_PER_PAGE);
+  
+  // Calculate Filtered Items for Display
+  const backpackItems = engineRef.current ? engineRef.current.gameState.backpack : [];
+  const filteredBackpack = backpackItems.filter(item => {
+      if (inventoryTab === 'equipment') return item.type === 'equipment'; // Strict filtering: only equipment
+      if (inventoryTab === 'map') return item.type === 'map';
+      return false;
+  });
+  
+  const totalBackpackPages = Math.ceil(Math.max(1, filteredBackpack.length) / ITEMS_PER_PAGE);
 
   // Helper for Wave Name translation logic (simple for now)
   const getWaveDisplayName = () => {
@@ -1025,12 +1056,28 @@ export const GameCanvas: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Inventory Tabs */}
+                        <div className="flex w-full border-b border-zinc-800 bg-zinc-900/80">
+                            <button 
+                                onClick={() => { setInventoryTab('equipment'); setBackpackPage(0); }}
+                                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${inventoryTab === 'equipment' ? 'text-yellow-500 border-b-2 border-yellow-500 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Equipment
+                            </button>
+                            <button 
+                                onClick={() => { setInventoryTab('map'); setBackpackPage(0); }}
+                                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${inventoryTab === 'map' ? 'text-purple-500 border-b-2 border-purple-500 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Maps
+                            </button>
+                        </div>
+
                         {/* Backpack Container - Scrollable */}
                         <div className="w-full bg-zinc-900 p-4 flex-1 overflow-y-auto min-h-0 pb-12">
                             <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
                                 <span>{t('ui_bag', language)}</span>
                                 <div className="flex gap-2 items-center">
-                                    <span className="text-zinc-600 mr-2">{engineRef.current.gameState.backpack.length}/{BACKPACK_CAPACITY}</span>
+                                    <span className="text-zinc-600 mr-2">{filteredBackpack.length} Items</span>
                                     {totalBackpackPages > 1 && (
                                         <div className="flex gap-1 text-[10px] text-zinc-400 bg-zinc-800 rounded px-1">
                                             <button 
@@ -1059,17 +1106,23 @@ export const GameCanvas: React.FC = () => {
                             >
                                 {Array.from({ length: ITEMS_PER_PAGE }).map((_, i) => {
                                     const index = backpackPage * ITEMS_PER_PAGE + i;
-                                    const item = engineRef.current!.gameState.backpack[index];
+                                    const item = filteredBackpack[index];
                                     
-                                    if (index >= BACKPACK_CAPACITY) return null; 
-                                    if (!item) return <div key={i} className="aspect-square bg-zinc-950 border border-zinc-800 rounded shadow-inner"></div>;
+                                    // if (index >= filteredBackpack.length) return null; // No, render placeholders to keep grid stable?
+                                    // Actually rendering empty slots is fine for visual consistency, but for filtered list,
+                                    // usually we just render items.
+                                    if (!item) {
+                                        // Only render placeholder if within page bounds but empty? 
+                                        // Or just fill the grid with empties?
+                                        // Let's render empty slot to maintain grid structure for at least one page visual
+                                        return <div key={i} className="aspect-square bg-zinc-950 border border-zinc-800 rounded shadow-inner opacity-50"></div>;
+                                    }
                                     
                                     let borderColor = "border-neutral-700";
-                                    let textColor = "text-gray-400";
                                     let bgColor = "bg-neutral-800";
-                                    if (item.rarity === 'magic') { borderColor = "border-blue-800"; textColor = "text-blue-300"; bgColor="bg-blue-900/20"; }
-                                    if (item.rarity === 'rare') { borderColor = "border-yellow-700"; textColor = "text-yellow-300"; bgColor="bg-yellow-900/20"; }
-                                    if (item.rarity === 'unique') { borderColor = "border-orange-800"; textColor = "text-orange-300"; bgColor="bg-orange-900/20"; }
+                                    if (item.rarity === 'magic') { borderColor = "border-blue-800"; bgColor="bg-blue-900/20"; }
+                                    if (item.rarity === 'rare') { borderColor = "border-yellow-700"; bgColor="bg-yellow-900/20"; }
+                                    if (item.rarity === 'unique') { borderColor = "border-orange-800"; bgColor="bg-orange-900/20"; }
 
                                     return (
                                         <div 
@@ -1079,11 +1132,10 @@ export const GameCanvas: React.FC = () => {
                                             onMouseLeave={handleItemLeave}
                                             className={`aspect-square ${bgColor} ${borderColor} border rounded flex flex-col items-center justify-center cursor-pointer hover:border-white/50 active:scale-95 transition-all relative group`}
                                         >
-                                            {item.type === 'map' ? (
-                                                <span className="text-xl">📜</span>
-                                            ) : (
-                                                <span className={`text-[10px] font-bold ${textColor}`}>{getAbbreviation(item.name, item)}</span>
-                                            )}
+                                            <div className="text-2xl drop-shadow-md">
+                                                {getItemIcon(item)}
+                                            </div>
+                                            
                                             {showMerchant && (
                                                 <span className="absolute bottom-1 right-1 text-[8px] text-green-500 font-bold">$</span>
                                             )}

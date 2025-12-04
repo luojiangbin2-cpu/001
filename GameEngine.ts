@@ -1,6 +1,6 @@
 
 
-import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier } from './types';
+import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
 import { SkillManager, SKILL_DATABASE } from './SkillSystem';
@@ -75,21 +75,6 @@ export interface EngineCallbacks {
     onInventoryChange: () => void;
     onNearbyInteractable: (interactable: Interactable | null) => void;
     onOpenShop: () => void; // New Callback for NPC interaction
-}
-
-interface VisualEffect {
-    id: number;
-    active: boolean;
-    type: 'cyclone' | 'hit' | 'portal' | 'shockwave';
-    x: number;
-    y: number;
-    radius?: number;
-    lifeTime: number;
-    maxLifeTime: number;
-    color: string;
-    // Cyclone Props
-    angle?: number;
-    spinSpeed?: number;
 }
 
 const uuid = () => Math.random().toString(36).substring(2, 9);
@@ -171,7 +156,7 @@ export class GameEngine {
 
     private createInitialState(): GameState {
         // ROGUELIKE START
-        // Pre-equip Fireball and Cyclone for Debugging
+        // Pre-equip Fireball and Flame Ring
         const activeSkills: ActiveSkillInstance[] = [
             createEmptySkillSlot(0),
             createEmptySkillSlot(1),
@@ -1282,17 +1267,18 @@ export class GameEngine {
         if (skill.definition.id === 'flame_ring') {
             const radius = skill.stats.areaOfEffect;
             
-            // Expanding Shockwave Visual
+            // Expanding Flame Ring Visual
             this.visualEffects.push({
                 id: Math.random(),
                 active: true,
-                type: 'shockwave',
+                type: 'flame_ring_visual',
                 x: px,
                 y: py,
                 radius: radius,
-                lifeTime: 0.3,
-                maxLifeTime: 0.3,
-                color: '#f97316'
+                lifeTime: 0.4,
+                maxLifeTime: 0.4,
+                color: '#f97316',
+                followPlayer: true
             });
 
             for (const enemy of this.enemies) {
@@ -1315,8 +1301,10 @@ export class GameEngine {
                      if (enemy.type === 'boss') force *= 0.1; // Boss resistance
                      if (enemy.type === 'tank') force *= 0.5; // Tank resistance
                      
-                     enemy.knockbackVelocity.x += nx * force;
-                     enemy.knockbackVelocity.y += ny * force;
+                     if (enemy.knockbackVelocity) {
+                         enemy.knockbackVelocity.x += nx * force;
+                         enemy.knockbackVelocity.y += ny * force;
+                     }
                 }
             }
             return;
@@ -1578,6 +1566,11 @@ export class GameEngine {
                                 label: 'Descend'
                             });
                             this.callbacks.onNotification("Portal Opened");
+                            
+                            // AUTO-MAGNETIZE ORBS ON CLEAR
+                            this.xpOrbs.forEach(o => {
+                                if (o.active) o.magnetized = true;
+                            });
                         }
                     } else if (this.gameState.currentFloor === 5) {
                         // Boss Floor
@@ -1595,6 +1588,11 @@ export class GameEngine {
                                 label: 'Return'
                             });
                             this.callbacks.onNotification("Victory!");
+                            
+                            // AUTO-MAGNETIZE ORBS ON CLEAR
+                            this.xpOrbs.forEach(o => {
+                                if (o.active) o.magnetized = true;
+                            });
                         }
                     }
                 }
@@ -1755,8 +1753,8 @@ export class GameEngine {
             const bossActive = this.gameState.currentFloor === 5 && dir.bossSpawned;
             
             if (!objectiveComplete && !bossActive) {
-                // INCREASED MAX ENEMIES: 60 + Floor*10 + Tier*5
-                const currentMaxEnemies = 60 + (this.gameState.currentFloor * 10) + (this.gameState.currentMapStats.tier * 5);
+                // INCREASED MAX ENEMIES: (60 + Floor*10 + Tier*5) * 2
+                const currentMaxEnemies = (60 + (this.gameState.currentFloor * 10) + (this.gameState.currentMapStats.tier * 5)) * 2;
                 this.gameState.currentMaxEnemies = currentMaxEnemies;
                 
                 const activeEnemyCount = this.enemies.filter(e => e.active).length;
@@ -1767,8 +1765,16 @@ export class GameEngine {
 
                     let spawnTypes: EnemyType[] = ['basic'];
                     
-                    // INCREASED SPAWN RATE: 0.4s base * (0.9 ^ Floor)
-                    let interval = (0.4 * Math.pow(0.9, this.gameState.currentFloor)) / spawnRateMult;
+                    // Smart Rhythm Logic
+                    const progress = Math.min(1.0, this.gameState.currentKills / (this.gameState.targetKills || 1));
+
+                    // Base Interval: 0.4s base * (0.9 ^ Floor)
+                    const baseInterval = (0.4 * Math.pow(0.9, this.gameState.currentFloor)) / spawnRateMult;
+                    
+                    // Dynamic Interval: Accelerate as progress increases (Linear Difficulty Growth)
+                    // At 0% progress: 100% of baseInterval
+                    // At 100% progress: 40% of baseInterval (much faster)
+                    let interval = baseInterval * (1.0 - progress * 0.6);
                     
                     const difficultyTime = dir.gameTime + (this.gameState.currentFloor * 30); 
 
@@ -1826,7 +1832,39 @@ export class GameEngine {
         // 6. Update Visual Effects & Particles
         for (let i = this.visualEffects.length - 1; i >= 0; i--) {
             const eff = this.visualEffects[i];
+            
+            // Follow Player Logic
+            if (eff.followPlayer) {
+                 eff.x = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
+                 eff.y = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
+            }
+
             eff.lifeTime -= dt;
+            
+            // Flame Ring Particle Logic
+            if (eff.type === 'flame_ring_visual') {
+                 const lifeRatio = eff.lifeTime / eff.maxLifeTime;
+                 const progress = 1.0 - lifeRatio;
+                 const currentRadius = (eff.radius || 100) * progress;
+                 
+                 // Spawn particles at edge
+                 const particleCount = 2;
+                 for(let k=0; k<particleCount; k++) {
+                     const angle = Math.random() * Math.PI * 2;
+                     const speed = 150;
+                     this.gameState.particles.push({
+                         id: Math.random(),
+                         x: eff.x + Math.cos(angle) * currentRadius,
+                         y: eff.y + Math.sin(angle) * currentRadius,
+                         vx: Math.cos(angle) * speed,
+                         vy: Math.sin(angle) * speed,
+                         life: 0.3 + Math.random() * 0.2,
+                         maxLife: 0.5,
+                         color: Math.random() > 0.5 ? '#f97316' : '#facc15',
+                         size: Math.random() * 3 + 2
+                     });
+                 }
+            }
             
             // Cyclone Update Logic
             if (eff.type === 'cyclone') {
@@ -1908,7 +1946,7 @@ export class GameEngine {
             if (!enemy.active) continue;
 
             // PHYSICS & KNOCKBACK
-            if (enemy.knockbackVelocity.x !== 0 || enemy.knockbackVelocity.y !== 0) {
+            if (enemy.knockbackVelocity && (enemy.knockbackVelocity.x !== 0 || enemy.knockbackVelocity.y !== 0)) {
                 enemy.x += enemy.knockbackVelocity.x * dt;
                 enemy.y += enemy.knockbackVelocity.y * dt;
                 
@@ -1923,7 +1961,7 @@ export class GameEngine {
             }
 
             // Determine if stunned/knocked back
-            const isKnockedBack = (Math.abs(enemy.knockbackVelocity.x) > 10 || Math.abs(enemy.knockbackVelocity.y) > 10);
+            const isKnockedBack = enemy.knockbackVelocity && (Math.abs(enemy.knockbackVelocity.x) > 10 || Math.abs(enemy.knockbackVelocity.y) > 10);
 
             // STATUS UPDATE LOGIC
             // Ignited: DoT
@@ -2557,4 +2595,374 @@ export class GameEngine {
 
             } else if (eff.type === 'hit') {
                 ctx.save();
-                ctx.translate(eff.x,
+                ctx.translate(eff.x, eff.y);
+                const progress = eff.lifeTime / eff.maxLifeTime;
+                ctx.globalAlpha = progress;
+                ctx.fillStyle = eff.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, eff.radius! * (1.5 - progress), 0, Math.PI * 2); // Expanding
+                ctx.fill();
+                ctx.restore();
+            } else if (eff.type === 'flame_ring_visual') {
+                ctx.save();
+                ctx.translate(eff.x, eff.y);
+                const lifeRatio = eff.lifeTime / eff.maxLifeTime;
+                const progress = 1.0 - lifeRatio;
+                const currentRadius = (eff.radius || 100) * progress;
+                const alpha = Math.max(0, lifeRatio);
+
+                ctx.globalCompositeOperation = 'lighter';
+                
+                // 1. Dark Orange Shockwave
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                ctx.lineWidth = 20 * (1 - progress);
+                ctx.strokeStyle = `rgba(234, 88, 12, ${alpha})`; 
+                ctx.stroke();
+
+                // 2. Bright Yellow Core
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius * 0.9, 0, Math.PI * 2);
+                ctx.lineWidth = 10 * (1 - progress);
+                ctx.strokeStyle = `rgba(253, 224, 71, ${alpha})`;
+                ctx.stroke();
+
+                // 3. Faint Red Glow
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius * 0.7, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(220, 38, 38, ${alpha * 0.3})`; 
+                ctx.fill();
+
+                ctx.restore();
+            } else if (eff.type === 'shockwave') {
+                ctx.save();
+                ctx.translate(eff.x, eff.y);
+                const lifeRatio = eff.lifeTime / eff.maxLifeTime;
+                const alpha = Math.max(0, lifeRatio);
+                
+                // Expanding Ring Logic
+                // Start from small, expand to max radius
+                const progress = 1.0 - lifeRatio; 
+                const currentRadius = (eff.radius || 100) * progress;
+
+                ctx.globalCompositeOperation = 'lighter';
+                
+                // Outer Ring
+                ctx.lineWidth = 8 * alpha;
+                ctx.strokeStyle = `rgba(249, 115, 22, ${alpha})`; // Orange
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Inner Glow
+                ctx.lineWidth = 4 * alpha;
+                ctx.strokeStyle = `rgba(255, 200, 100, ${alpha})`; // Light Orange
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius * 0.8, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+        
+        // --- RENDER PARTICLES ---
+        for (const p of this.gameState.particles) {
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            const lifeRatio = p.life / p.maxLife;
+            ctx.globalAlpha = lifeRatio;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            // Scale size by life
+            const size = p.size * lifeRatio; 
+            ctx.rect(-size/2, -size/2, size, size);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // --- RENDER LOOT ---
+        const time = Date.now();
+        for (const l of this.loot) {
+            if (!l.active) continue;
+            
+            let color = '#d4d4d8'; 
+            if (l.rarity === 'magic') color = '#3b82f6'; 
+            else if (l.rarity === 'rare') color = '#eab308'; 
+            else if (l.rarity === 'unique') color = '#f97316'; 
+
+            const cx = l.x + l.width / 2;
+            const cy = l.y + l.height / 2;
+
+            ctx.save();
+            
+            if (l.rarity === 'rare' || l.rarity === 'unique') {
+                 const beamHeight = 80;
+                 const beamGrad = ctx.createLinearGradient(cx, cy, cx, cy - beamHeight);
+                 beamGrad.addColorStop(0, color);
+                 beamGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                 
+                 ctx.globalAlpha = 0.3;
+                 ctx.fillStyle = beamGrad;
+                 ctx.beginPath();
+                 ctx.moveTo(cx - 10, cy);
+                 ctx.lineTo(cx + 10, cy);
+                 ctx.lineTo(cx + 15, cy - beamHeight);
+                 ctx.lineTo(cx - 15, cy - beamHeight);
+                 ctx.closePath();
+                 ctx.fill();
+                 ctx.globalAlpha = 1.0;
+            }
+
+            const pulse = Math.sin(time / 200) * 2; 
+            const radius = 15 + pulse;
+            
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.2;
+            ctx.fill();
+            
+            ctx.globalAlpha = 1.0;
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'white';
+            ctx.font = '20px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            let icon = "📦";
+            if (l.itemData.type === 'gem') {
+                icon = "💎";
+            } else if (l.itemData.type === 'map') {
+                icon = "📜";
+            } else {
+                switch(l.itemData.slot) {
+                    case 'weapon': icon = "⚔️"; break;
+                    case 'offhand': icon = "🛡️"; break;
+                    case 'helmet': icon = "🪖"; break;
+                    case 'body': icon = "👕"; break;
+                    case 'gloves': icon = "🧤"; break;
+                    case 'boots': icon = "👢"; break;
+                    case 'ring1': 
+                    case 'ring2': 
+                    case 'amulet': icon = "💍"; break;
+                }
+            }
+            ctx.fillText(icon, cx, cy);
+
+            ctx.restore();
+        }
+
+        // Enemies
+        let activeBoss: Enemy | null = null;
+        for (const e of this.enemies) {
+            if (!e.active) continue;
+            
+            if (e.x + e.width < camX - visibleWidth/2 || e.x > camX + visibleWidth/2 ||
+                e.y + e.height < camY - visibleHeight/2 || e.y > camY + visibleHeight/2) {
+                 if (e.type === 'boss') activeBoss = e; 
+                 continue;
+            }
+            
+            let key = 'enemy';
+            if (e.type === 'fast') key = 'enemyFast';
+            if (e.type === 'tank') key = 'enemyTank';
+            if (e.type === 'boss') { key = 'enemyBoss'; activeBoss = e; }
+            
+            if (e.modifiers.includes('ghostly')) ctx.globalAlpha = 0.6;
+            
+            drawSprite(key, e.x, e.y, e.width, e.height, ENEMY_COLOR);
+            
+            ctx.globalAlpha = 1.0; 
+
+            // DRAW STATUS EFFECTS
+            if (Object.keys(e.statuses).length > 0) {
+                const cx = e.x + e.width/2;
+                const cy = e.y + e.height/2;
+                
+                if (e.statuses['ignited']) {
+                    ctx.strokeStyle = '#f97316';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, e.width/2 + 5, 0, Math.PI*2);
+                    ctx.stroke();
+                }
+                if (e.statuses['chilled']) {
+                    ctx.strokeStyle = '#22d3ee';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, e.width/2 + 8, 0, Math.PI*2);
+                    ctx.stroke();
+                }
+                if (e.statuses['shocked']) {
+                    ctx.strokeStyle = '#facc15';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, e.width/2 + 11, 0, Math.PI*2);
+                    ctx.stroke();
+                }
+            }
+
+            if (e.isElite) {
+                ctx.strokeStyle = ELITE_COLOR;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(e.x - 2, e.y - 2, e.width + 4, e.height + 4);
+            }
+
+            if (e.modifiers.includes('berserker') && e.hp < (e.maxHp || 100) * 0.5) {
+                ctx.strokeStyle = '#ef4444'; 
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(e.x + e.width/2, e.y + e.height/2, e.width/1.5, 0, Math.PI*2);
+                ctx.stroke();
+            }
+
+            if (e.modifiers.includes('proximal')) {
+                ctx.strokeStyle = '#a855f7'; 
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const t = Date.now()/300;
+                ctx.arc(e.x + e.width/2, e.y + e.height/2, e.width + Math.sin(t)*5, 0, Math.PI*2);
+                ctx.stroke();
+            }
+
+            if (e.type !== 'boss' && e.hp < (e.maxHp || e.hp)) {
+                const barW = e.width;
+                const barH = 4;
+                const barX = e.x;
+                const barY = e.y - 8;
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(barX, barY, barW, barH);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(barX, barY, barW * (e.hp / (e.maxHp || 1)), barH);
+            }
+        }
+
+        for (const b of this.bullets) {
+            if (!b.active) continue;
+
+            if (b.owner === 'player' && b.damageType === 'fire') {
+                // --- FIREBALL RENDER ---
+                const cx = b.x + b.width / 2;
+                const cy = b.y + b.height / 2;
+                
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                
+                // Projectile Head
+                const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, 15);
+                grad.addColorStop(0, 'white');
+                grad.addColorStop(0.4, 'yellow');
+                grad.addColorStop(1, 'rgba(255, 0, 0, 0)');
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.restore();
+            } else {
+                const key = b.owner === 'enemy' ? 'bulletBoss' : 'bullet';
+                const color = b.color ? b.color : (b.owner === 'enemy' ? BULLET_BOSS_COLOR : '#facc15'); 
+                drawSprite(key, b.x, b.y, b.width, b.height, color);
+            }
+        }
+
+        // Draw Player and Invulnerability Effect
+        if (this.gameState.playerInvulnerabilityTimer > 0) {
+            if (Math.floor(Date.now() / 100) % 2 === 0) {
+                drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
+            }
+        } else {
+             drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
+        }
+
+        for (const t of this.floatingTexts) {
+            if (!t.active) continue;
+            ctx.globalAlpha = t.lifeTime / FLOATING_TEXT_LIFETIME; 
+            ctx.font = `900 ${14 * t.scale}px monospace`;
+            ctx.fillStyle = 'black'; 
+            ctx.fillText(t.text, t.x + 2, t.y + 2);
+            ctx.fillStyle = t.color;
+            ctx.fillText(t.text, t.x, t.y);
+            ctx.globalAlpha = 1.0;
+        }
+
+        ctx.restore(); 
+
+        if (activeBoss) {
+            const barW = Math.min(width * 0.8, 400);
+            const barH = 20;
+            const barX = (width - barW) / 2;
+            const barY = 80; 
+    
+            ctx.fillStyle = '#27272a';
+            ctx.fillRect(barX, barY, barW, barH);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.strokeRect(barX, barY, barW, barH);
+            
+            const pct = Math.max(0, activeBoss.hp / (activeBoss.maxHp || 1));
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(barX, barY, barW * pct, barH);
+    
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText("THE BUTCHER", width/2, barY - 5);
+            ctx.textAlign = 'left';
+        }
+    
+        if (this.joystickState.active && !this.gameState.isGameOver && !this.gameState.isPaused) {
+            const { origin, current } = this.joystickState;
+            ctx.beginPath();
+            ctx.arc(origin.x, origin.y, JOYSTICK_MAX_RADIUS, 0, Math.PI*2);
+            ctx.fillStyle = JOYSTICK_BASE_COLOR;
+            ctx.fill();
+            const dx = current.x - origin.x, dy = current.y - origin.y;
+            const dist = Math.sqrt(dx*dx+dy*dy);
+            let hx = current.x, hy = current.y;
+            if (dist > JOYSTICK_MAX_RADIUS) {
+                const a = Math.atan2(dy, dx);
+                hx = origin.x + Math.cos(a)*JOYSTICK_MAX_RADIUS;
+                hy = origin.y + Math.sin(a)*JOYSTICK_MAX_RADIUS;
+            }
+            ctx.beginPath();
+            ctx.arc(hx, hy, 20, 0, Math.PI*2);
+            ctx.fillStyle = JOYSTICK_HANDLE_COLOR;
+            ctx.fill();
+        }
+    
+        if (!this.gameState.isGameOver) {
+            const activeGem = this.gameState.activeSkills[0].activeGem;
+            const skillName = activeGem ? activeGem.name : "Unarmed";
+
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(10, 50, 160, 65);
+            ctx.fillStyle = 'white';
+            ctx.font = '12px monospace';
+            ctx.fillText(`FPS: ${this.timers.currentFps}`, 20, 65);
+            
+            const enemyCount = this.enemies.filter(e => e.active).length;
+            ctx.fillText(`Enemies: ${enemyCount}${this.gameState.currentMaxEnemies ? '/' + this.gameState.currentMaxEnemies : ''}`, 20, 80);
+            
+            if (isRun) {
+                ctx.fillStyle = '#fde047';
+                ctx.fillText(`Map: +${Math.round((this.gameState.currentMapStats.packSizeMult-1)*100)}% Size`, 20, 95);
+            } else {
+                ctx.fillStyle = '#c026d3';
+                ctx.fillText(`Hideout Safe Zone`, 20, 95);
+            }
+            
+            ctx.fillStyle = '#fb923c';
+            ctx.fillText(`Main: ${skillName}`, 20, 110);
+        }
+    }
+}

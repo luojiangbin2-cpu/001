@@ -319,3 +319,20 @@ export interface GameState {
   particles: Particle[];
   xpOrbs: XPOrb[];
 }
+
+export interface VisualEffect {
+    id: number;
+    active: boolean;
+    type: 'cyclone' | 'hit' | 'portal' | 'shockwave' | 'flame_ring_visual';
+    x: number;
+    y: number;
+    radius?: number;
+    lifeTime: number;
+    maxLifeTime: number;
+    color: string;
+    // Cyclone Props
+    angle?: number;
+    spinSpeed?: number;
+    // Follow Props
+    followPlayer?: boolean;
+}
