@@ -23,6 +23,7 @@ export class StatsSystem {
     this._modifiers = [];
     // Initialize default ailment chance as requested (15%)
     this.setBase('ailmentChance', 0.15);
+    this.setBase('xpGain', 1.0);
   }
 
   /**

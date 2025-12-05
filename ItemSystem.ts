@@ -16,6 +16,7 @@ export const STAT_UPGRADES: UpgradeDefinition[] = [
   { id: 'precision', name: 'Precision', description: 'Crit Chance +10%', stat: 'critChance', value: 0.1, type: 'base', color: 'bg-purple-500' },
   { id: 'iron_skin', name: 'Iron Skin', description: 'Defense +30', stat: 'defense', value: 30, type: 'base', color: 'bg-stone-500' },
   { id: 'regen', name: 'Troll Blood', description: 'HP Regen +2/s', stat: 'hpRegen', value: 2, type: 'base', color: 'bg-emerald-500' },
+  { id: 'wisdom', name: 'Wisdom', description: 'XP Gain +20%', stat: 'xpGain', value: 0.2, type: 'base', color: 'bg-indigo-500' },
 ];
 
 // --- 1. AFFIX DATABASE ---

@@ -163,7 +163,7 @@ export interface FloatingText {
 }
 
 export type UpgradeType = 'base' | 'increased' | 'more';
-export type StatKey = 'moveSpeed' | 'attackSpeed' | 'bulletDamage' | 'projectileCount' | 'projectileSpread' | 'maxHp' | 'hpRegen' | 'critChance' | 'critMultiplier' | 'defense' | 'areaOfEffect' | 'projectileSpeed' | 'ailmentChance';
+export type StatKey = 'moveSpeed' | 'attackSpeed' | 'bulletDamage' | 'projectileCount' | 'projectileSpread' | 'maxHp' | 'hpRegen' | 'critChance' | 'critMultiplier' | 'defense' | 'areaOfEffect' | 'projectileSpeed' | 'ailmentChance' | 'xpGain';
 
 // New StatKeys for Maps
 export type MapStatKey = 'monsterPackSize' | 'monsterHealth' | 'monsterDamage' | 'xpGain' | 'itemRarity';

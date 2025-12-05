@@ -138,6 +138,8 @@ export const TRANSLATIONS = {
     upg_iron_skin_desc: "Defense +30",
     upg_regen_name: "Troll Blood",
     upg_regen_desc: "HP Regen +2/s",
+    upg_wisdom_name: "Wisdom",
+    upg_wisdom_desc: "XP Gain +20%",
 
     // Affixes
     affix_heavy: "+Damage",
@@ -304,6 +306,8 @@ export const TRANSLATIONS = {
     upg_iron_skin_desc: "护甲 +30",
     upg_regen_name: "巨魔之血",
     upg_regen_desc: "生命回复 +2/秒",
+    upg_wisdom_name: "智慧",
+    upg_wisdom_desc: "经验获取 +20%",
 
     // Affixes
     affix_heavy: "+伤害",

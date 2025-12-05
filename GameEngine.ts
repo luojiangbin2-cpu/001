@@ -1035,7 +1035,10 @@ export class GameEngine {
             penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
         }
 
-        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier));
+        // Apply Stats Multiplier (Wisdom, etc)
+        const xpMult = this.playerStats.getStatValue('xpGain');
+
+        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier * xpMult));
         
         this.gameState.xp += effectiveXp;
         if (this.gameState.xp >= this.gameState.nextLevelXp) {
@@ -1631,6 +1634,16 @@ export class GameEngine {
 
         if (this.gameState.playerInvulnerabilityTimer > 0) {
             this.gameState.playerInvulnerabilityTimer -= dt;
+        }
+
+        // HP Regen Logic
+        const regen = this.playerStats.getStatValue('hpRegen');
+        const maxHp = this.playerStats.getStatValue('maxHp');
+        if (regen > 0 && this.currentHp < maxHp && !this.gameState.isGameOver) {
+            this.currentHp += regen * dt;
+            if (this.currentHp > maxHp) {
+                this.currentHp = maxHp;
+            }
         }
 
         // 1. Calculate Environment Debuffs (Bubble / Ice Ground)
@@ -2330,7 +2343,7 @@ export class GameEngine {
             if (effect.type === 'fire_ground') {
                 ctx.fillStyle = `rgba(249, 115, 22, ${0.3 + Math.sin(Date.now()/200)*0.1})`;
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#f97316';
                 ctx.lineWidth = 2;
@@ -2339,7 +2352,7 @@ export class GameEngine {
             else if (effect.type === 'ice_ground') {
                 ctx.fillStyle = `rgba(6, 182, 212, 0.3)`;
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#cffafe';
                 ctx.lineWidth = 2;
@@ -2353,7 +2366,7 @@ export class GameEngine {
             else if (effect.type === 'lightning_ground') {
                  ctx.fillStyle = `rgba(168, 85, 247, 0.2)`;
                  ctx.beginPath();
-                 ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                 ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
                  ctx.fill();
                  if (Math.random() > 0.5) {
                     ctx.beginPath();
@@ -2369,7 +2382,7 @@ export class GameEngine {
                 ctx.strokeStyle = '#a855f7';
                 ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
                 ctx.stroke();
                 
                 ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
@@ -2377,7 +2390,7 @@ export class GameEngine {
 
                 // Rotating internal ring
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius * 0.9, rot, rot + Math.PI);
+                ctx.arc(0, 0, Math.max(0, effect.radius * 0.9), rot, rot + Math.PI);
                 ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
@@ -2387,11 +2400,11 @@ export class GameEngine {
                 const pct = 1.0 - effect.duration; // 0 to 1 as it nears expiry (assuming 1s duration)
                 ctx.fillStyle = `rgba(239, 68, 68, ${0.2 + pct*0.3})`;
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
                 ctx.fill();
                 
                 ctx.beginPath();
-                ctx.arc(0, 0, effect.radius * pct, 0, Math.PI * 2); // Inner expanding circle
+                ctx.arc(0, 0, Math.max(0, effect.radius * pct), 0, Math.PI * 2); // Inner expanding circle
                 ctx.strokeStyle = '#ef4444';
                 ctx.lineWidth = 2;
                 ctx.stroke();
@@ -2499,14 +2512,14 @@ export class GameEngine {
             // Glow Core
             ctx.globalCompositeOperation = 'lighter';
             ctx.beginPath();
-            ctx.arc(0, 0, radius + pulse, 0, Math.PI * 2);
+            ctx.arc(0, 0, Math.max(0, radius + pulse), 0, Math.PI * 2);
             ctx.fill();
             
             // White Center for pop
             ctx.fillStyle = 'white';
             ctx.globalAlpha = 0.6;
             ctx.beginPath();
-            ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2);
+            ctx.arc(0, 0, Math.max(0, radius * 0.4), 0, Math.PI * 2);
             ctx.fill();
             
             ctx.globalCompositeOperation = 'source-over';
@@ -2579,7 +2592,7 @@ export class GameEngine {
                     const r = radius * (0.8 + Math.random() * 0.3);
                     const start = Math.random() * Math.PI * 2;
                     const len = 0.5 + Math.random();
-                    ctx.arc(0, 0, r, start, start + len);
+                    ctx.arc(0, 0, Math.max(0, r), start, start + len);
                     ctx.stroke();
                 }
                 ctx.restore();
@@ -2593,7 +2606,7 @@ export class GameEngine {
                     ctx.beginPath();
                     const r = radius * (0.15 + Math.random() * 0.1);
                     const start = Math.random() * Math.PI * 2;
-                    ctx.arc(0, 0, r, start, start + 1.5);
+                    ctx.arc(0, 0, Math.max(0, r), start, start + 1.5);
                     ctx.stroke();
                 }
                 ctx.restore();
@@ -2610,7 +2623,7 @@ export class GameEngine {
                 ctx.globalAlpha = progress;
                 ctx.fillStyle = eff.color;
                 ctx.beginPath();
-                ctx.arc(0, 0, eff.radius! * (1.5 - progress), 0, Math.PI * 2); // Expanding
+                ctx.arc(0, 0, Math.max(0, eff.radius! * (1.5 - progress)), 0, Math.PI * 2); // Expanding
                 ctx.fill();
                 ctx.restore();
             } else if (eff.type === 'flame_ring_visual') {
@@ -2625,21 +2638,21 @@ export class GameEngine {
                 
                 // 1. Dark Orange Shockwave
                 ctx.beginPath();
-                ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, currentRadius), 0, Math.PI * 2);
                 ctx.lineWidth = 20 * (1 - progress);
                 ctx.strokeStyle = `rgba(234, 88, 12, ${alpha})`; 
                 ctx.stroke();
 
                 // 2. Bright Yellow Core
                 ctx.beginPath();
-                ctx.arc(0, 0, currentRadius * 0.9, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, currentRadius * 0.9), 0, Math.PI * 2);
                 ctx.lineWidth = 10 * (1 - progress);
                 ctx.strokeStyle = `rgba(253, 224, 71, ${alpha})`;
                 ctx.stroke();
 
                 // 3. Faint Red Glow
                 ctx.beginPath();
-                ctx.arc(0, 0, currentRadius * 0.7, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, currentRadius * 0.7), 0, Math.PI * 2);
                 ctx.fillStyle = `rgba(220, 38, 38, ${alpha * 0.3})`; 
                 ctx.fill();
 
@@ -2661,14 +2674,14 @@ export class GameEngine {
                 ctx.lineWidth = 8 * alpha;
                 ctx.strokeStyle = `rgba(249, 115, 22, ${alpha})`; // Orange
                 ctx.beginPath();
-                ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, currentRadius), 0, Math.PI * 2);
                 ctx.stroke();
                 
                 // Inner Glow
                 ctx.lineWidth = 4 * alpha;
                 ctx.strokeStyle = `rgba(255, 200, 100, ${alpha})`; // Light Orange
                 ctx.beginPath();
-                ctx.arc(0, 0, currentRadius * 0.8, 0, Math.PI * 2);
+                ctx.arc(0, 0, Math.max(0, currentRadius * 0.8), 0, Math.PI * 2);
                 ctx.stroke();
 
                 ctx.restore();
