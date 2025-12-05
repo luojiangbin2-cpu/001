@@ -1,5 +1,3 @@
-
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
@@ -396,10 +394,7 @@ export const GameCanvas: React.FC = () => {
   };
 
   const getItemIcon = (item: ItemInstance) => {
-    if (item.type === 'map') {
-        if (item.id === 'map_endless_void') return '🌌'; // Special Icon for Endless
-        return '📜';
-    }
+    if (item.type === 'map') return '📜';
     switch (item.slot) {
         case 'weapon': return '⚔️';
         case 'offhand': return '🛡️';
@@ -450,17 +445,9 @@ export const GameCanvas: React.FC = () => {
         >
             {!item && <span className="text-[9px] text-neutral-600 uppercase font-bold tracking-widest">{t(`item_${slot}` as any, language).substring(0, 3)}</span>}
             {item && (
-                <>
-                    <div className="text-xl sm:text-2xl drop-shadow-md">
-                        {getItemIcon(item)}
-                    </div>
-                    {/* Show Stack Size if > 1 */}
-                    {item.stackSize && item.stackSize > 1 && (
-                        <span className="absolute bottom-0 right-1 text-xs font-bold text-white drop-shadow-md">
-                            x{item.stackSize}
-                        </span>
-                    )}
-                </>
+                <div className="text-xl sm:text-2xl drop-shadow-md">
+                    {getItemIcon(item)}
+                </div>
             )}
         </div>
     );
@@ -807,7 +794,7 @@ export const GameCanvas: React.FC = () => {
                                     className="w-full h-full p-2 flex flex-col items-center justify-center cursor-pointer bg-purple-900/20"
                                     onClick={() => setSelectedMap(null)}
                                  >
-                                     <span className="text-4xl">{getItemIcon(selectedMap)}</span>
+                                     <span className="text-4xl">📜</span>
                                      <span className="text-xs text-center text-purple-200 font-bold mt-2">{selectedMap.name}</span>
                                  </div>
                              ) : (
@@ -820,20 +807,14 @@ export const GameCanvas: React.FC = () => {
                             {selectedMap ? (
                                 <div className="space-y-1">
                                     <h3 className="text-purple-400 font-bold border-b border-purple-900 pb-1 mb-2 text-sm">{selectedMap.name}</h3>
-                                    {selectedMap.id === 'map_endless_void' ? (
-                                        <div className="text-xs text-purple-300 italic">
-                                            The void hungers... (Infinite Scaling)
+                                    {selectedMap.affixes.map((affix, i) => (
+                                        <div key={i} className="text-xs text-zinc-300 flex justify-between">
+                                            <span>{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
+                                            <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
+                                                {Math.round(affix.value * 100)}%
+                                            </span>
                                         </div>
-                                    ) : (
-                                        selectedMap.affixes.map((affix, i) => (
-                                            <div key={i} className="text-xs text-zinc-300 flex justify-between">
-                                                <span>{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
-                                                <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
-                                                    {Math.round(affix.value * 100)}%
-                                                </span>
-                                            </div>
-                                        ))
-                                    )}
+                                    ))}
                                 </div>
                             ) : (
                                 <div className="text-zinc-600 text-xs italic text-center mt-6">No Map Selected</div>
@@ -862,7 +843,7 @@ export const GameCanvas: React.FC = () => {
                                         ${selectedMap?.id === mapItem.id ? 'border-purple-500 bg-purple-900/30' : 'border-zinc-700 bg-zinc-950'}
                                     `}
                                  >
-                                     <span className="text-xl">{getItemIcon(mapItem)}</span>
+                                     <span className="text-xl">📜</span>
                                      <span className="text-[9px] text-zinc-400">T{mapItem.level}</span>
                                  </div>
                              ))}
@@ -1150,7 +1131,23 @@ export const GameCanvas: React.FC = () => {
                                     if (item.rarity === 'rare') { borderColor = "border-yellow-700"; bgColor="bg-yellow-900/20"; }
                                     if (item.rarity === 'unique') { borderColor = "border-orange-800"; bgColor="bg-orange-900/20"; }
 
-                                    return renderSlot(item.slot as ItemSlot, item);
+                                    return (
+                                        <div 
+                                            key={item.id} 
+                                            onClick={() => item.type === 'equipment' ? handleItemClick(item) : null}
+                                            onMouseEnter={(e) => handleItemHover(e, item)}
+                                            onMouseLeave={handleItemLeave}
+                                            className={`aspect-square ${bgColor} ${borderColor} border rounded flex flex-col items-center justify-center cursor-pointer hover:border-white/50 active:scale-95 transition-all relative group`}
+                                        >
+                                            <div className="text-2xl drop-shadow-md">
+                                                {getItemIcon(item)}
+                                            </div>
+                                            
+                                            {showMerchant && (
+                                                <span className="absolute bottom-1 right-1 text-[8px] text-green-500 font-bold">$</span>
+                                            )}
+                                        </div>
+                                    );
                                 })}
                             </div>
                         </div>
@@ -1188,22 +1185,16 @@ export const GameCanvas: React.FC = () => {
                     ) : tooltip.item.type === 'map' ? (
                         <div className="space-y-1">
                             <div className="text-[10px] text-zinc-500 mb-2 italic">{t('lbl_map_tier', language, {n: tooltip.item.level})}</div>
-                            {tooltip.item.id === 'map_endless_void' ? (
-                                <div className="text-xs text-purple-300 italic">
-                                    The void hungers... (Infinite Scaling)
-                                </div>
-                            ) : (
-                                tooltip.item.affixes.map((affix, i) => (
-                                    <div key={i} className="text-blue-200 text-xs flex justify-between items-start gap-1">
-                                        <span className="text-left flex-1">{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
-                                        <div className="text-right whitespace-nowrap">
-                                            <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
-                                                {Math.round(affix.value * 100)}%
-                                            </span>
-                                        </div>
+                            {tooltip.item.affixes.map((affix, i) => (
+                                <div key={i} className="text-blue-200 text-xs flex justify-between items-start gap-1">
+                                    <span className="text-left flex-1">{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
+                                    <div className="text-right whitespace-nowrap">
+                                        <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
+                                            {Math.round(affix.value * 100)}%
+                                        </span>
                                     </div>
-                                ))
-                            )}
+                                </div>
+                            ))}
                         </div>
                     ) : (
                         <>

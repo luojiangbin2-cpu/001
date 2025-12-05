@@ -1,4 +1,3 @@
-
 export interface Vector2 {
     x: number;
     y: number;
@@ -52,7 +51,6 @@ export interface ItemInstance {
     level: number;
     affixes: ItemAffixInstance[];
     gemDefinitionId?: string;
-    stackSize?: number;
 }
 
 export interface SkillStats {
@@ -286,7 +284,6 @@ export interface GameState {
     groundEffects: GroundEffect[];
     particles: Particle[];
     xpOrbs: XPOrb[];
-    isEndlessMode?: boolean;
 }
 
 export interface JoystickState {
