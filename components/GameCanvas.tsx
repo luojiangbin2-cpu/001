@@ -9,6 +9,9 @@ export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
+  // UI Throttling Ref
+  const lastUiUpdate = useRef(0);
+
   // UI State
   const [gameOverUI, setGameOverUI] = useState(false);
   const [hudState, setHudState] = useState({ 
@@ -56,7 +59,12 @@ export const GameCanvas: React.FC = () => {
   }, []);
 
   const onHudUpdate = useCallback((data: any) => {
-    setHudState(data);
+    const now = Date.now();
+    // Throttle UI updates to avoid excessive re-renders (100ms interval) unless forced
+    if (data.forceUpdate || now - lastUiUpdate.current > 100) {
+        setHudState(data);
+        lastUiUpdate.current = now;
+    }
   }, []);
 
   const onLevelUp = useCallback((options: UpgradeDefinition[]) => {
@@ -395,7 +403,7 @@ export const GameCanvas: React.FC = () => {
         case 'body': return '👕';
         case 'gloves': return '🧤';
         case 'boots': return '👢';
-        case 'amulet': return '🧿';
+        case 'amulet': return '📿';
         case 'ring1': 
         case 'ring2': return '💍';
         default: return '❓';

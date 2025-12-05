@@ -1,4 +1,5 @@
 
+
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -2487,44 +2488,39 @@ export class GameEngine {
             }
         }
 
-        // --- DRAW XP ORBS ---
-        for (const orb of this.xpOrbs) {
-            if (!orb.active) continue;
-            ctx.save();
-            ctx.translate(orb.x, orb.y);
-            
-            // Config based on tier
-            let color = '#3b82f6'; // Blue
-            let radius = 4;
-            let shadowColor = '#60a5fa';
-            
-            if (orb.tier === 'purple') { color = '#a855f7'; radius = 5; shadowColor = '#c084fc'; }
-            if (orb.tier === 'pink') { color = '#ec4899'; radius = 6; shadowColor = '#f472b6'; }
-            if (orb.tier === 'gold') { color = '#eab308'; radius = 8; shadowColor = '#facc15'; }
+        // --- DRAW XP ORBS (BATCHED) ---
+        const orbPulse = Math.sin(Date.now() / 200) * 1.5;
+        
+        const orbConfigs = [
+            { tier: 'blue' as XPOrbTier, color: '#3b82f6', radius: 4 },
+            { tier: 'purple' as XPOrbTier, color: '#a855f7', radius: 5 },
+            { tier: 'pink' as XPOrbTier, color: '#ec4899', radius: 6 },
+            { tier: 'gold' as XPOrbTier, color: '#eab308', radius: 8 }
+        ];
 
-            // Pulse
-            const pulse = Math.sin(Date.now() / 200) * 1.5;
-            
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = shadowColor;
-            ctx.fillStyle = color;
-            
-            // Glow Core
-            ctx.globalCompositeOperation = 'lighter';
+        for (const config of orbConfigs) {
+            ctx.fillStyle = config.color;
             ctx.beginPath();
-            ctx.arc(0, 0, Math.max(0, radius + pulse), 0, Math.PI * 2);
-            ctx.fill();
             
-            // White Center for pop
-            ctx.fillStyle = 'white';
-            ctx.globalAlpha = 0.6;
-            ctx.beginPath();
-            ctx.arc(0, 0, Math.max(0, radius * 0.4), 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.globalAlpha = 1.0;
-            ctx.restore();
+            const currentRadius = Math.max(1, config.radius + orbPulse);
+            let hasOrbs = false;
+
+            for (const orb of this.xpOrbs) {
+                if (!orb.active || orb.tier !== config.tier) continue;
+                
+                if (orb.x < camX - visibleWidth/2 - 20 || orb.x > camX + visibleWidth/2 + 20 ||
+                    orb.y < camY - visibleHeight/2 - 20 || orb.y > camY + visibleHeight/2 + 20) {
+                     continue;
+                }
+
+                ctx.moveTo(orb.x + currentRadius, orb.y);
+                ctx.arc(orb.x, orb.y, currentRadius, 0, Math.PI * 2);
+                hasOrbs = true;
+            }
+
+            if (hasOrbs) {
+                ctx.fill();
+            }
         }
 
         // --- RENDER VISUAL EFFECTS ---
