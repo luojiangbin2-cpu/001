@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
@@ -560,7 +559,7 @@ export const GameCanvas: React.FC = () => {
         </div>
 
         {/* HUD - Buttons */}
-        <div className="absolute top-3 right-3 z-20 flex gap-2">
+        <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
              {hudState.waveName !== 'HIDEOUT' && (
                  <button onClick={() => engineRef.current?.returnToHideout()} className="bg-black/80 hover:bg-red-900/80 text-red-500 border border-red-700/50 font-serif font-bold py-1.5 px-3 rounded shadow-lg active:scale-95 transition-all text-[10px] tracking-wider">
                     🏠 EXIT
