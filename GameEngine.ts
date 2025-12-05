@@ -2293,6 +2293,121 @@ export class GameEngine {
         }
     }
 
+    private drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, dt: number) {
+        const time = Date.now() / 1000;
+        const isMoving = this.joystickState.active;
+        const facingLeft = this.joystickState.vector.x < 0;
+
+        ctx.save();
+        ctx.translate(x + PLAYER_SIZE / 2, y + PLAYER_SIZE / 2);
+
+        // -- 1. Draw Shadow/Aura (Stationary relative to feet) --
+        ctx.save();
+        ctx.scale(1, 0.4); // Flatten Y
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.beginPath();
+        ctx.arc(0, 50, 20 + Math.sin(time * 3) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Aura Glow
+        const auraColor = 'rgba(34, 211, 238, 0.15)'; // Cyan glow low opacity
+        ctx.fillStyle = auraColor;
+        ctx.beginPath();
+        ctx.arc(0, 50, 35 + Math.sin(time * 2) * 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // -- 2. Animation Math --
+        // Idle breathing vs Walking bob
+        const bobSpeed = isMoving ? 15 : 3;
+        const bobAmp = isMoving ? 3 : 1.5;
+        const bobY = Math.sin(time * bobSpeed) * bobAmp;
+        const sway = isMoving ? Math.cos(time * 10) * 3 : Math.sin(time * 1.5) * 1;
+
+        // Apply flip based on direction
+        if (facingLeft) ctx.scale(-1, 1);
+        
+        // Apply Bobbing
+        ctx.translate(0, bobY);
+
+        // -- 3. Back Arm (Holding Staff) --
+        // Pivot point near shoulder
+        ctx.save();
+        ctx.translate(10, -5); 
+        const staffRot = isMoving ? Math.sin(time * 10) * 0.2 : Math.sin(time * 1) * 0.05;
+        ctx.rotate(staffRot);
+
+        // Shaft
+        ctx.strokeStyle = '#4b3b2c'; // Dark wood
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, 20); // Bottom of staff
+        ctx.lineTo(0, -35); // Top of staff
+        ctx.stroke();
+
+        // Staff Head (Gem)
+        const gemColor = '#22d3ee'; // Cyan
+        ctx.fillStyle = gemColor;
+        ctx.shadowColor = gemColor;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(0, -35, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0; // Reset shadow
+
+        // Hand
+        ctx.fillStyle = '#1e1b4b'; // Glove color
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+
+        // -- 4. Robe Body --
+        const robeDark = '#1e1b4b'; // Deep Indigo
+        const robeLight = '#312e81'; // Lighter Indigo for highlights
+
+        ctx.fillStyle = robeDark;
+        ctx.beginPath();
+        // Hood Top
+        ctx.moveTo(0, -25); 
+        // Right Shoulder curve
+        ctx.bezierCurveTo(15, -20, 20, 0, 15, 25);
+        // Bottom hem (Swaying)
+        ctx.bezierCurveTo(5 + sway, 28, -5 + sway, 28, -15, 25);
+        // Left Shoulder curve
+        ctx.bezierCurveTo(-20, 0, -15, -20, 0, -25);
+        ctx.fill();
+
+        // -- 5. Hood/Head Area --
+        ctx.fillStyle = '#0f172a'; // Darker inner hood
+        ctx.beginPath();
+        ctx.moveTo(0, -22);
+        ctx.bezierCurveTo(10, -20, 12, -10, 0, -5); // Opening shape
+        ctx.bezierCurveTo(-12, -10, -10, -20, 0, -22);
+        ctx.fill();
+
+        // -- 6. Glowing Eyes --
+        const eyeColor = '#22d3ee'; // Cyan
+        ctx.fillStyle = eyeColor;
+        // Left Eye
+        ctx.beginPath();
+        ctx.ellipse(-4, -14, 1.5, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Right Eye
+        ctx.beginPath();
+        ctx.ellipse(4, -14, 1.5, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // -- 7. Front Arm (Casting/Idle) --
+        ctx.fillStyle = robeLight;
+        ctx.beginPath();
+        ctx.ellipse(-12, 0 + (isMoving ? -sway : 0), 4, 10, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
     private draw() {
         if (!this.canvas || !this.ctx) return;
         const ctx = this.ctx;
@@ -2919,10 +3034,10 @@ export class GameEngine {
         // Draw Player and Invulnerability Effect
         if (this.gameState.playerInvulnerabilityTimer > 0) {
             if (Math.floor(Date.now() / 100) % 2 === 0) {
-                drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
+                this.drawPlayer(ctx, this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, 0);
             }
         } else {
-             drawSprite('player', this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, PLAYER_SIZE, PLAYER_SIZE, PLAYER_COLOR);
+             this.drawPlayer(ctx, this.gameState.playerWorldPos.x, this.gameState.playerWorldPos.y, 0);
         }
 
         for (const t of this.floatingTexts) {
