@@ -1,5 +1,4 @@
 
-
 import { ItemSlot, ItemRarity, ItemInstance, AffixDefinition, AffixType, ItemAffixInstance, UpgradeDefinition, SkillDefinition } from './types';
 import { SKILL_DATABASE } from './SkillSystem';
 
@@ -274,7 +273,8 @@ export const generateItem = (targetSlot: ItemSlot | 'random' | 'map', level: num
     slot,
     rarity,
     level,
-    affixes: []
+    affixes: [],
+    stackSize: 1
   };
 
   // ADD IMPLICIT FOR EQUIPMENT
@@ -369,7 +369,8 @@ export const createGemItem = (definitionId: string): ItemInstance => {
         rarity: 'normal',
         level: 1,
         affixes: [],
-        gemDefinitionId: definitionId
+        gemDefinitionId: definitionId,
+        stackSize: 1
     };
 };
 
@@ -384,7 +385,8 @@ export const createSpecificItem = (slot: ItemSlot, affixId: string): ItemInstanc
         slot,
         rarity: 'magic',
         level: 1,
-        affixes: []
+        affixes: [],
+        stackSize: 1
     };
 
     // Add implicit
@@ -450,4 +452,17 @@ export const generateRewards = (level: number, excludedActiveGemIds: string[] = 
         }
     }
     return rewards;
+};
+
+export const createEndlessKey = (): ItemInstance => {
+    return {
+        id: 'map_endless_void',
+        name: "Endless Void Key",
+        type: 'map',
+        slot: 'map',
+        rarity: 'unique',
+        level: 1,
+        affixes: [],
+        stackSize: 1,
+    };
 };
