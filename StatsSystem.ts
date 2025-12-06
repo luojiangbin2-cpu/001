@@ -1,5 +1,3 @@
-
-
 import { StatKey, UpgradeType, SkillTag } from './types';
 
 interface Modifier {
@@ -50,44 +48,32 @@ export class StatsSystem {
    * Formula: (Base + Sum(Flat)) * (1 + Sum(Increased)) * Product(1 + More)
    * 
    * @param stat The stat to calculate
-   * @param contextTags Tags describing the context (e.g. ['projectile', 'fire'] for a Fireball skill)
-   * @returns The final calculated number
+   * @param tags Context tags (e.g. from the active skill)
    */
-  getStatValue(stat: StatKey, contextTags: SkillTag[] = []): number {
+  getStatValue(stat: StatKey, tags: SkillTag[] = []): number {
     const base = this._bases.get(stat) || 0;
     
-    let added = 0;
-    let increased = 0;
-    let more = 1;
+    let flatSum = 0;
+    let increasedSum = 0;
+    let moreProduct = 1.0;
 
     for (const mod of this._modifiers) {
       if (mod.stat !== stat) continue;
-      
-      // Tag Filtering Logic:
-      // If the modifier has specific tags (e.g. ['fire']), it ONLY applies if 
-      // the contextTags (e.g. ['projectile', 'fire']) contains ALL of them.
-      // A modifier with NO tags is Global and applies to everything.
+
+      // Check tags compatibility
       if (mod.tags && mod.tags.length > 0) {
-        const matches = mod.tags.every(t => contextTags.includes(t));
-        if (!matches) continue;
+        if (!tags || tags.length === 0) continue; // Specific modifier, no context -> skip
+        
+        // Check if any of the modifier's tags are present in the context
+        const hasMatch = mod.tags.some(t => tags.includes(t));
+        if (!hasMatch) continue;
       }
 
-      switch (mod.type) {
-        case 'base':
-          added += mod.value;
-          break;
-        case 'increased':
-          increased += mod.value;
-          break;
-        case 'more':
-          more *= (1 + mod.value);
-          break;
-      }
+      if (mod.type === 'base') flatSum += mod.value;
+      if (mod.type === 'increased') increasedSum += mod.value;
+      if (mod.type === 'more') moreProduct *= (1 + mod.value);
     }
 
-    // Protection against negative multipliers making stats weird
-    const totalIncreased = Math.max(0, 1 + increased);
-    
-    return (base + added) * totalIncreased * more;
+    return (base + flatSum) * (1 + increasedSum) * moreProduct;
   }
 }
