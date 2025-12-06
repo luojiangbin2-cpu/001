@@ -24,7 +24,7 @@ export const GameCanvas: React.FC = () => {
   const [showMapDevice, setShowMapDevice] = useState(false);
   const [showMerchant, setShowMerchant] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [language, setLanguage] = useState<Language>('en');
+  const [language, setLanguage] = useState<Language>('zh');
   const [nearbyInteractable, setNearbyInteractable] = useState<Interactable | null>(null);
 
   const [, setTick] = useState(0); 
