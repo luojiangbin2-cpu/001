@@ -1,4 +1,5 @@
 
+
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect, MapStats } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem, AFFIX_DATABASE, createEndlessKey } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -1301,7 +1302,7 @@ export class GameEngine {
         }
     }
 
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0, behavior: 'normal' | 'orbit' = 'normal') {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0) {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -1319,14 +1320,6 @@ export class GameEngine {
         bullet.damage = damage;
         bullet.pierce = pierce;
         bullet.ailmentChance = ailmentChance;
-        bullet.behavior = behavior;
-        if (behavior === 'orbit') {
-            bullet.orbitAngle = angle;
-            bullet.orbitRadius = 120; // Default orbit radius
-            bullet.initialSpeed = speed;
-            bullet.vx = 0; // Controlled by update
-            bullet.vy = 0;
-        }
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1489,9 +1482,7 @@ export class GameEngine {
         }
 
         if (skill.tags.includes('projectile')) {
-            const isOrbit = skill.stats.orbit > 0;
-
-            if (!nearest && skill.definition.id !== 'nova' && !isOrbit) {
+            if (!nearest && skill.definition.id !== 'nova') {
                  if (!this.joystickState.active) return;
             }
 
@@ -1516,15 +1507,7 @@ export class GameEngine {
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
 
             for (let i = 0; i < safeCount; i++) {
-                let angle = 0;
-                if (isOrbit) {
-                     // Orbit mode: Evenly distributed around circle
-                     angle = (Math.PI * 2 / safeCount) * i + baseAngle;
-                } else {
-                     angle = (safeCount > 1 ? startAngle + i * spreadRad : baseAngle);
-                }
-                
-                this.spawnBullet(px, py, angle, 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance, isOrbit ? 'orbit' : 'normal');
+                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance);
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -2340,25 +2323,9 @@ export class GameEngine {
 
         for (const b of this.bullets) {
             if (!b.active) continue;
-
-            if (b.behavior === 'orbit' && b.owner === 'player') {
-                // Orbit Physics Update
-                const angularSpeed = (b.initialSpeed || 200) / (b.orbitRadius || 120);
-                b.orbitAngle = (b.orbitAngle || 0) + angularSpeed * dt;
-                
-                const playerCenterX = this.gameState.playerWorldPos.x + PLAYER_SIZE / 2;
-                const playerCenterY = this.gameState.playerWorldPos.y + PLAYER_SIZE / 2;
-                
-                b.x = playerCenterX + Math.cos(b.orbitAngle) * (b.orbitRadius || 120) - b.width/2;
-                b.y = playerCenterY + Math.sin(b.orbitAngle) * (b.orbitRadius || 120) - b.height/2;
-                
-                b.lifeTime -= dt;
-            } else {
-                b.x += b.vx * dt;
-                b.y += b.vy * dt;
-                b.lifeTime -= dt;
-            }
-
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            b.lifeTime -= dt;
             if (b.lifeTime <= 0) { b.active = false; continue; }
 
             // --- FIREBALL TRAIL PARTICLES ---
@@ -2686,77 +2653,173 @@ export class GameEngine {
         };
 
         // --- DRAW GROUND EFFECTS ---
+        const currentTime = Date.now(); // Cache time
+
         for (const effect of this.gameState.groundEffects) {
             ctx.save();
             ctx.translate(effect.x, effect.y);
-            
+
             if (effect.type === 'fire_ground') {
-                ctx.fillStyle = `rgba(249, 115, 22, ${0.3 + Math.sin(Date.now()/200)*0.1})`;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#f97316';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            } 
-            else if (effect.type === 'ice_ground') {
-                ctx.fillStyle = `rgba(6, 182, 212, 0.3)`;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#cffafe';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                // Ice texture
-                ctx.fillStyle = 'white';
-                for(let k=0; k<3; k++) {
-                    ctx.fillRect(Math.random()*effect.radius - effect.radius/2, Math.random()*effect.radius - effect.radius/2, 4, 4);
-                }
-            } 
-            else if (effect.type === 'lightning_ground') {
-                 ctx.fillStyle = `rgba(168, 85, 247, 0.2)`;
-                 ctx.beginPath();
-                 ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                 ctx.fill();
-                 if (Math.random() > 0.5) {
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#facc15';
-                    ctx.lineWidth = 2;
-                    ctx.moveTo(-10, -10); ctx.lineTo(10, 10);
-                    ctx.stroke();
-                 }
-            }
-            else if (effect.type === 'bubble') {
-                // Large temporal bubble
-                const rot = Date.now()/1000;
-                ctx.strokeStyle = '#a855f7';
-                ctx.lineWidth = 4;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.stroke();
+                // Lighter blending for core flame
+                ctx.globalCompositeOperation = 'lighter';
                 
-                ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
+                // Jittery radius
+                const jitter = Math.sin(currentTime * 0.015 + effect.x) * 3;
+                const r = Math.max(0, effect.radius + jitter);
+
+                // Radial Gradient
+                const grad = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+                grad.addColorStop(0, '#fef08a'); // Bright Yellow (Core)
+                grad.addColorStop(0.4, '#ea580c'); // Orange Red (Body)
+                grad.addColorStop(1, 'rgba(0,0,0,0)'); // Transparent
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Rotating internal ring
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius * 0.9), rot, rot + Math.PI);
-                ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+                // Dark Charred Edge (Source-Over to darken)
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = '#431407'; // Very dark brown/red
                 ctx.lineWidth = 2;
                 ctx.stroke();
+
+                // Occasional Ember Particle
+                if (Math.random() < 0.05) {
+                    this.gameState.particles.push({
+                        id: Math.random(),
+                        x: effect.x + (Math.random() - 0.5) * r * 0.8,
+                        y: effect.y + (Math.random() - 0.5) * r * 0.8,
+                        vx: (Math.random() - 0.5) * 20,
+                        vy: -30 - Math.random() * 30, // Upwards
+                        life: 0.5 + Math.random() * 0.5,
+                        maxLife: 1.0,
+                        color: '#fdba74', // Light orange
+                        size: Math.random() * 3 + 1
+                    });
+                }
+            } 
+            else if (effect.type === 'ice_ground') {
+                // Base Glow
+                ctx.globalCompositeOperation = 'screen'; // Icy glow
+                ctx.fillStyle = 'rgba(6, 182, 212, 0.15)'; // Cyan tint
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Glowing Edge
+                ctx.strokeStyle = 'rgba(207, 250, 254, 0.4)'; // Light cyan
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Static Cracks (Pseudo-random based on position)
+                ctx.strokeStyle = '#cffafe'; // White-ish Cyan
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                
+                // Use coordinate as seed
+                const seed = Math.abs(effect.x * 123 + effect.y * 456); 
+                const crackCount = 3 + (seed % 3); // 3 to 5 cracks
+                
+                for(let i=0; i<crackCount; i++) {
+                    const angle = (seed + i * (Math.PI * 2 / crackCount)) % (Math.PI * 2);
+                    const len = effect.radius * (0.4 + ((seed * (i+1)) % 60) / 100); // 0.4 to 1.0 radius
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len);
+                }
+                ctx.stroke();
+            }
+            else if (effect.type === 'lightning_ground') {
+                ctx.globalCompositeOperation = 'lighter';
+                
+                // Static Field Base
+                ctx.fillStyle = 'rgba(168, 85, 247, 0.15)'; // Purple
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Dynamic Arc (30% chance)
+                if (Math.random() < 0.3) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = effect.radius;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    // Jagged line
+                    const midX = Math.cos(angle) * r * 0.5 + (Math.random()-0.5)*20;
+                    const midY = Math.sin(angle) * r * 0.5 + (Math.random()-0.5)*20;
+                    const endX = Math.cos(angle) * r;
+                    const endY = Math.sin(angle) * r;
+                    
+                    ctx.lineTo(midX, midY);
+                    ctx.lineTo(endX, endY);
+
+                    ctx.strokeStyle = '#fef08a'; // Yellow-200
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 10;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+            }
+            else if (effect.type === 'bubble') {
+                // Void Bubble
+                ctx.fillStyle = 'rgba(88, 28, 135, 0.2)'; // Deep Purple
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Rune Rings
+                ctx.strokeStyle = '#d8b4fe'; // Lavender
+                ctx.lineWidth = 2;
+                
+                // Ring 1: Clockwise
+                ctx.save();
+                ctx.rotate(currentTime * 0.001);
+                ctx.setLineDash([15, 10]); // Dash pattern
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius * 0.9, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+
+                // Ring 2: Counter-Clockwise
+                ctx.save();
+                ctx.rotate(-currentTime * 0.0015);
+                ctx.setLineDash([5, 15]); // Different dash
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius * 0.7, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
             }
             else if (effect.type === 'blast_warning') {
-                // Expanding circle logic relative to remaining duration
-                const pct = 1.0 - effect.duration; // 0 to 1 as it nears expiry (assuming 1s duration)
-                ctx.fillStyle = `rgba(239, 68, 68, ${0.2 + pct*0.3})`;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.fill();
+                // "Doom" Timer style
+                // Assuming duration starts around 1.0 - 2.0. 
+                // We want to fill UP from center.
+                // Estimate progress assuming a default max of ~2s for visual consistency if max isn't stored, 
+                // OR relative to 1.0 if it's a normalized mechanic. 
+                // Previous code used `pct = 1.0 - effect.duration`. Let's stick to that pattern assuming ~1.5s max usually.
                 
+                // Clamp progress 0 to 1
+                const progress = Math.max(0, Math.min(1, 1.0 - (effect.duration / 1.5))); 
+
+                // 1. Danger Zone Background
+                ctx.fillStyle = 'rgba(69, 10, 10, 0.3)'; // Dark Red bg
                 ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius * pct), 0, Math.PI * 2); // Inner expanding circle
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 2. Countdown Fill (Solid expanding circle)
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; // Red-500
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, effect.radius * progress, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 3. Danger Border
                 ctx.strokeStyle = '#ef4444';
                 ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
                 ctx.stroke();
             }
 
@@ -3028,6 +3091,51 @@ export class GameEngine {
                 ctx.beginPath();
                 ctx.arc(0, 0, Math.max(0, currentRadius * 0.8), 0, Math.PI * 2);
                 ctx.stroke();
+
+                ctx.restore();
+            } else if (eff.type === 'falling_ice') {
+                ctx.save();
+                // Calculate falling animation: Accelerate from height (h=300)
+                const dropHeight = 300;
+                const progress = 1 - (eff.lifeTime / eff.maxLifeTime); // 0 to 1
+                const easeIn = progress * progress; // Acceleration
+                const currentY = eff.y - dropHeight * (1 - easeIn); 
+
+                ctx.translate(eff.x, currentY);
+
+                // 1. Draw Ice Shard (Inverted Triangle)
+                ctx.beginPath();
+                // Ice Blue Gradient
+                const grad = ctx.createLinearGradient(0, -60, 0, 0);
+                grad.addColorStop(0, 'rgba(255, 255, 255, 0)'); // Tail transparent
+                grad.addColorStop(0.5, '#bae6fd'); // Sky-200
+                grad.addColorStop(1, '#ffffff'); // Tip pure white
+                ctx.fillStyle = grad;
+                
+                ctx.moveTo(0, 0); // Tip
+                ctx.lineTo(-8, -80); // Top Left
+                ctx.lineTo(8, -80); // Top Right
+                ctx.fill();
+
+                // 2. Draw Trail (Speed Lines)
+                ctx.beginPath();
+                ctx.fillStyle = 'rgba(186, 230, 253, 0.3)';
+                ctx.moveTo(0, -20);
+                ctx.lineTo(-4, -120);
+                ctx.lineTo(4, -120);
+                ctx.fill();
+
+                // 3. Impact Shockwave (Last 20%)
+                if (progress > 0.8) {
+                    // Restore drawing context effectively to ground level implicitly by logic or check
+                    // Since currentY is very close to eff.y here, we draw locally
+                    const impactProgress = (progress - 0.8) * 5; // 0 to 1
+                    ctx.scale(1 + impactProgress, 0.5 + impactProgress * 0.5); // Flattened expansion
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgba(255, 255, 255, ${1 - impactProgress})`; // Fade out
+                    ctx.arc(0, 0, 40 * impactProgress, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 ctx.restore();
             }
@@ -3323,6 +3431,42 @@ export class GameEngine {
                 ctx.fill();
 
                 ctx.globalCompositeOperation = 'source-over';
+                ctx.restore();
+            } else if (b.owner === 'player' && b.damageType === 'lightning') {
+                // --- ELECTRO SPHERE RENDER ---
+                const cx = b.x + b.width/2;
+                const cy = b.y + b.height/2;
+                const radius = b.width/2;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                
+                // Inner Core
+                ctx.fillStyle = '#ccfbf1'; // Teal 100
+                ctx.shadowColor = '#22d3ee';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.6, 0, Math.PI*2);
+                ctx.fill();
+
+                // Jittery Arcs
+                ctx.strokeStyle = '#22d3ee'; // Cyan 400
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                const segments = 8;
+                for(let k=0; k<=segments; k++) {
+                    const angle = (k/segments) * Math.PI*2;
+                    const jitter = (Math.random() - 0.5) * 5;
+                    const r = radius + jitter;
+                    const px = Math.cos(angle) * r;
+                    const py = Math.sin(angle) * r;
+                    if(k===0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+
                 ctx.restore();
             } else {
                 const key = b.owner === 'enemy' ? 'bulletBoss' : 'bullet';
