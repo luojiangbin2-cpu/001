@@ -1036,6 +1036,14 @@ export class GameEngine {
         this.callbacks.onInventoryChange();
     }
 
+    public cancelSupportSelection() {
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        // Do not modify isPaused state, because the player is still in the level up screen
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
     public selectUpgrade(upgrade: UpgradeDefinition) {
         if (upgrade.gemItem) {
             const gemDef = SKILL_DATABASE[upgrade.gemItem.gemDefinitionId!];

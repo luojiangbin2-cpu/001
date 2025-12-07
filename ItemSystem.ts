@@ -421,15 +421,15 @@ export const generateRewards = (level: number, excludedActiveGemIds: string[] = 
         safetyCounter++;
         const roll = Math.random();
         
-        // 40% Stat, 30% Active (if available), 30% Support
         let selection: 'stat' | 'active' | 'support' = 'stat';
         
-        if (roll < 0.4) {
-            selection = 'stat';
-        } else if (roll < 0.7) {
-            selection = activeSkills.length > 0 ? 'active' : 'support';
+        // Random selection logic
+        if (roll < 0.33) {
+            selection = 'stat'; 
+        } else if (roll < 0.66) {
+            selection = 'active';
         } else {
-            selection = 'support';
+            selection = 'support'; 
         }
         
         // Handle empty pools fallback

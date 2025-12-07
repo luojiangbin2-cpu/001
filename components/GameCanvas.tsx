@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, ItemRarity } from '../types';
+import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, ItemRarity, SkillDefinition } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
 import { SKILL_DATABASE, SkillManager } from '../SkillSystem';
 import { t, Language } from '../locales';
@@ -284,8 +283,16 @@ export const GameCanvas: React.FC = () => {
   };
 
   const handleSelectUpgrade = (option: UpgradeDefinition) => {
-      engineRef.current?.selectUpgrade(option);
-      setUpgradeState({ show: false, options: [] });
+      if (!engineRef.current) return;
+      engineRef.current.selectUpgrade(option);
+      
+      // If the engine went into support selection mode, we just hide the modal
+      // but keep the options so we can return if cancelled.
+      if (engineRef.current.gameState.isSelectingSupport) {
+          setUpgradeState(prev => ({ ...prev, show: false }));
+      } else {
+          setUpgradeState({ show: false, options: [] });
+      }
   };
 
   // Support Gem Link Handler
@@ -450,6 +457,21 @@ export const GameCanvas: React.FC = () => {
     return name.substring(0, 3);
   };
 
+  const getGemIcon = (def?: SkillDefinition) => {
+      if (!def) return '❓';
+      const tags = [...(def.tags || []), ...(def.supportedTags || [])];
+      
+      if (tags.includes('fire')) return '🔥';
+      if (tags.includes('cold')) return '❄️';
+      if (tags.includes('lightning')) return '⚡';
+      if (tags.includes('projectile')) return '🏹';
+      if (tags.includes('area')) return '💥';
+      if (tags.includes('movement')) return '🌪️';
+      
+      if (def.type === 'support') return '⚪';
+      return '💠';
+  };
+
   // --- Render Functions ---
 
   const renderSlot = (slot: ItemSlot, item: ItemInstance | null | undefined, sizeClass: string = 'aspect-square') => {
@@ -517,8 +539,8 @@ export const GameCanvas: React.FC = () => {
           >
              {item ? (
                  <>
-                     <span className={`text-white font-serif font-bold ${isSupport ? 'text-sm' : 'text-xl'} drop-shadow-md text-center leading-none px-1 ${!isCompatible ? 'text-red-300' : ''}`}>
-                         {getAbbreviation(item.name, item)}
+                     <span className={`text-white font-serif font-bold ${isSupport ? 'text-2xl' : 'text-3xl'} drop-shadow-md text-center leading-none px-1 ${!isCompatible ? 'text-red-300' : ''}`}>
+                         {getGemIcon(SKILL_DATABASE[item.gemDefinitionId || ''])}
                      </span>
                      {!isCompatible && (
                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-lg border border-red-400">!</div>
@@ -713,12 +735,24 @@ export const GameCanvas: React.FC = () => {
                      })}
                  </div>
 
-                 <button 
-                    onClick={handleStashSupport}
-                    className="px-6 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-600 rounded font-serif text-sm tracking-wider"
-                 >
-                    STASH TO BAG
-                 </button>
+                 <div className="flex gap-4">
+                     <button
+                        onClick={() => {
+                            engineRef.current?.cancelSupportSelection();
+                            setUpgradeState(prev => ({ ...prev, show: true }));
+                            setTick(t => t + 1);
+                        }}
+                        className="px-6 py-2 bg-zinc-900 hover:bg-red-900/30 text-red-400 border border-red-900/50 rounded font-serif text-sm tracking-wider"
+                     >
+                        RETURN
+                     </button>
+                     <button 
+                        onClick={handleStashSupport}
+                        className="px-6 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-600 rounded font-serif text-sm tracking-wider"
+                     >
+                        STASH TO BAG
+                     </button>
+                 </div>
              </div>
         )}
 
@@ -1088,7 +1122,7 @@ export const GameCanvas: React.FC = () => {
                                                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                                 
                                                 <span className="text-2xl drop-shadow-md relative z-10 transform group-hover:scale-110 transition-transform">
-                                                    {def?.tags.includes('fire') ? '🔥' : def?.tags.includes('movement') ? '🌪️' : def?.type === 'support' ? '⚪' : '💠'}
+                                                    {getGemIcon(def)}
                                                 </span>
                                                 <span className="absolute bottom-0.5 right-1 text-[8px] font-bold text-zinc-500/80 tracking-tighter">
                                                     {gem.gemDefinitionId?.substring(0,3).toUpperCase()}
