@@ -1,3 +1,4 @@
+
 import { ItemSlot, ItemRarity, ItemInstance, AffixDefinition, AffixType, ItemAffixInstance, UpgradeDefinition, SkillDefinition } from './types';
 import { SKILL_DATABASE } from './SkillSystem';
 
@@ -406,6 +407,8 @@ export const createSpecificItem = (slot: ItemSlot, affixId: string): ItemInstanc
 
 export const generateRewards = (level: number, excludedActiveGemIds: string[] = []): UpgradeDefinition[] => {
     const rewards: UpgradeDefinition[] = [];
+    const generatedIds = new Set<string>(); // Tracks stat.id or gemId to prevent duplicates in this batch
+    
     const allSkillKeys = Object.keys(SKILL_DATABASE);
     
     // Separate pools
@@ -413,54 +416,68 @@ export const generateRewards = (level: number, excludedActiveGemIds: string[] = 
     const activeSkills = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'active' && !excludedActiveGemIds.includes(k));
     const supportSkills = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'support');
 
-    for (let i = 0; i < 3; i++) {
+    let safetyCounter = 0;
+    while (rewards.length < 3 && safetyCounter < 50) {
+        safetyCounter++;
         const roll = Math.random();
         
-        // 40% Stat, 30% Active, 30% Support
-        // If no active skills available (collected all), fallback to Stat or Support
-        let typeRoll = roll;
-        if (activeSkills.length === 0 && typeRoll >= 0.4 && typeRoll < 0.7) {
-            typeRoll = 0.8; // Force into support
-        }
-
-        if (typeRoll < 0.4) {
-            const stat = STAT_UPGRADES[Math.floor(Math.random() * STAT_UPGRADES.length)];
-            rewards.push({ ...stat }); // Keep original ID for translation lookups
+        // 40% Stat, 30% Active (if available), 30% Support
+        let selection: 'stat' | 'active' | 'support' = 'stat';
+        
+        if (roll < 0.4) {
+            selection = 'stat';
+        } else if (roll < 0.7) {
+            selection = activeSkills.length > 0 ? 'active' : 'support';
         } else {
-            let gemId: string;
-            // Determine Gem Pool based on roll
-            if (typeRoll < 0.7 && activeSkills.length > 0) {
-                 gemId = activeSkills[Math.floor(Math.random() * activeSkills.length)];
-            } else {
-                 gemId = supportSkills[Math.floor(Math.random() * supportSkills.length)];
+            selection = 'support';
+        }
+        
+        // Handle empty pools fallback
+        if (selection === 'active' && activeSkills.length === 0) selection = 'support';
+        if (selection === 'support' && supportSkills.length === 0) selection = 'stat';
+
+        if (selection === 'stat') {
+            const stat = STAT_UPGRADES[Math.floor(Math.random() * STAT_UPGRADES.length)];
+            if (!generatedIds.has(stat.id)) {
+                generatedIds.add(stat.id);
+                rewards.push({ ...stat });
             }
-
-            const def = SKILL_DATABASE[gemId];
-            const item = createGemItem(gemId);
-
-            // Determine Color based on tags
-            let color = def.type === 'active' ? 'bg-blue-600' : 'bg-zinc-600';
+        } else {
+            // Gem Selection
+            const pool = selection === 'active' ? activeSkills : supportSkills;
+            if (pool.length === 0) continue; // Should have fallen back to stat, but just in case
             
-            // Check own tags and supported tags
-            const tagsToCheck = [...(def.tags || []), ...(def.supportedTags || [])];
+            const gemId = pool[Math.floor(Math.random() * pool.length)];
             
-            if (tagsToCheck.includes('fire')) {
-                color = 'bg-orange-600';
-            } else if (tagsToCheck.includes('projectile')) {
-                color = 'bg-emerald-600';
-            } else if (tagsToCheck.includes('cold')) {
-                color = 'bg-cyan-600';
+            if (!generatedIds.has(gemId)) {
+                generatedIds.add(gemId);
+                
+                const def = SKILL_DATABASE[gemId];
+                const item = createGemItem(gemId);
+
+                // Determine Color based on tags
+                let color = def.type === 'active' ? 'bg-blue-600' : 'bg-zinc-600';
+                const tagsToCheck = [...(def.tags || []), ...(def.supportedTags || [])];
+                
+                if (tagsToCheck.includes('fire')) {
+                    color = 'bg-orange-600';
+                } else if (tagsToCheck.includes('projectile')) {
+                    color = 'bg-emerald-600';
+                } else if (tagsToCheck.includes('cold')) {
+                    color = 'bg-cyan-600';
+                }
+
+                rewards.push({
+                    id: item.id, // item.id is uuid() from createGemItem. Gem rewards use UUID for their key.
+                    name: def.name,
+                    description: def.description,
+                    color: color,
+                    gemItem: item
+                });
             }
-
-            rewards.push({
-                id: item.id, // item.id is uuid() from createGemItem
-                name: def.name,
-                description: def.description,
-                color: color,
-                gemItem: item
-            });
         }
     }
+    
     return rewards;
 };
 
