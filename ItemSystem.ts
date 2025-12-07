@@ -425,13 +425,13 @@ export const generateRewards = (level: number, excludedActiveGemIds: string[] = 
 
         if (typeRoll < 0.4) {
             const stat = STAT_UPGRADES[Math.floor(Math.random() * STAT_UPGRADES.length)];
-            rewards.push({ ...stat, id: uuid() }); // Clone to avoid ref issues
+            rewards.push({ ...stat }); // Keep original ID for translation lookups
         } else if (typeRoll < 0.7 && activeSkills.length > 0) {
             const gemId = activeSkills[Math.floor(Math.random() * activeSkills.length)];
             const def = SKILL_DATABASE[gemId];
             const item = createGemItem(gemId);
             rewards.push({
-                id: item.id,
+                id: item.id, // item.id is uuid() from createGemItem
                 name: def.name,
                 description: def.description,
                 color: 'bg-cyan-600',
@@ -442,7 +442,7 @@ export const generateRewards = (level: number, excludedActiveGemIds: string[] = 
             const def = SKILL_DATABASE[gemId];
             const item = createGemItem(gemId);
             rewards.push({
-                id: item.id,
+                id: item.id, // item.id is uuid() from createGemItem
                 name: def.name,
                 description: def.description,
                 color: 'bg-zinc-600',

@@ -1398,7 +1398,27 @@ export const GameCanvas: React.FC = () => {
                 <p className="text-zinc-500 text-xs mb-6 uppercase tracking-widest">Choose a boon</p>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
-                    {upgradeState.options.map((option, i) => (
+                    {upgradeState.options.map((option, i) => {
+                        let name = option.name;
+                        let desc = option.description;
+
+                        if (option.gemItem && option.gemItem.gemDefinitionId) {
+                            const nameKey = `skill_${option.gemItem.gemDefinitionId}_name`;
+                            const descKey = `skill_${option.gemItem.gemDefinitionId}_desc`;
+                            const tName = t(nameKey as any, language);
+                            const tDesc = t(descKey as any, language);
+                            if (tName !== nameKey) name = tName;
+                            if (tDesc !== descKey) desc = tDesc;
+                        } else {
+                            const nameKey = `upg_${option.id}_name`;
+                            const descKey = `upg_${option.id}_desc`;
+                            const tName = t(nameKey as any, language);
+                            const tDesc = t(descKey as any, language);
+                            if (tName !== nameKey) name = tName;
+                            if (tDesc !== descKey) desc = tDesc;
+                        }
+
+                        return (
                         <div 
                             key={i}
                             onClick={() => handleSelectUpgrade(option)}
@@ -1417,13 +1437,13 @@ export const GameCanvas: React.FC = () => {
                             </div>
 
                             <h3 className={`font-bold text-lg ${option.gemItem ? 'text-cyan-400' : 'text-zinc-200'}`}>
-                                {option.name}
+                                {name}
                             </h3>
                             <p className="text-xs text-zinc-400 font-mono leading-tight px-4">
-                                {option.description}
+                                {desc}
                             </p>
                         </div>
-                    ))}
+                    )})}
                 </div>
             </div>
         )}
