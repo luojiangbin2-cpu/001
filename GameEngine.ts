@@ -1,3 +1,4 @@
+
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect, MapStats } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem, AFFIX_DATABASE, createEndlessKey } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -1335,6 +1336,48 @@ export class GameEngine {
         const dmgType = this.getDamageTypeFromTags(skill.tags);
 
         // Slow affects cooldown, but visually impacts projectile speed slightly? No, standard logic keeps speed constant.
+
+        // --- BLIZZARD LOGIC (New Nova) ---
+        if (skill.definition.id === 'nova') {
+             // 1. Filter enemies in range
+             const validEnemies = this.enemies.filter(e => {
+                 if (!e.active) return false;
+                 const dist = Math.sqrt((e.x + e.width/2 - px)**2 + (e.y + e.height/2 - py)**2);
+                 return dist < (skill.stats.range || 450);
+             });
+
+             // 2. Randomly select targets
+             const targetCount = Math.floor(skill.stats.projectileCount);
+             const targets: Enemy[] = [];
+             
+             // Simple random selection
+             const pool = [...validEnemies];
+             for (let i = 0; i < targetCount; i++) {
+                 if (pool.length === 0) break;
+                 const idx = Math.floor(Math.random() * pool.length);
+                 targets.push(pool[idx]);
+                 pool.splice(idx, 1); // Remove selected to prevent duplicate hits
+             }
+
+             // 3. Apply Damage and Effect
+             targets.forEach(e => {
+                 this.applySkillDamage(e, skill, dmgType);
+                 
+                 // Spawn Ice Shard effect
+                 this.visualEffects.push({
+                     id: Math.random(),
+                     active: true,
+                     type: 'falling_ice',
+                     x: e.x + e.width/2, // Target center X
+                     y: e.y + e.height/2 + 20, // Target feet Y (corrected downwards)
+                     lifeTime: 0.35, // Fast drop
+                     maxLifeTime: 0.35,
+                     color: '#bae6fd' 
+                 });
+             });
+             
+             return; // End processing, do not execute projectile/area logic below
+        }
         
         if (skill.definition.id === 'cyclone') {
             const radius = skill.stats.areaOfEffect;
@@ -2922,6 +2965,51 @@ export class GameEngine {
                 ctx.beginPath();
                 ctx.arc(0, 0, Math.max(0, currentRadius * 0.8), 0, Math.PI * 2);
                 ctx.stroke();
+
+                ctx.restore();
+            } else if (eff.type === 'falling_ice') {
+                ctx.save();
+                // Calculate falling animation: Accelerate from height (h=300)
+                const dropHeight = 300;
+                const progress = 1 - (eff.lifeTime / eff.maxLifeTime); // 0 to 1
+                const easeIn = progress * progress; // Acceleration
+                const currentY = eff.y - dropHeight * (1 - easeIn); 
+
+                ctx.translate(eff.x, currentY);
+
+                // 1. Draw Ice Shard (Inverted Triangle)
+                ctx.beginPath();
+                // Ice Blue Gradient
+                const grad = ctx.createLinearGradient(0, -60, 0, 0);
+                grad.addColorStop(0, 'rgba(255, 255, 255, 0)'); // Tail transparent
+                grad.addColorStop(0.5, '#bae6fd'); // Sky-200
+                grad.addColorStop(1, '#ffffff'); // Tip pure white
+                ctx.fillStyle = grad;
+                
+                ctx.moveTo(0, 0); // Tip
+                ctx.lineTo(-8, -80); // Top Left
+                ctx.lineTo(8, -80); // Top Right
+                ctx.fill();
+
+                // 2. Draw Trail (Speed Lines)
+                ctx.beginPath();
+                ctx.fillStyle = 'rgba(186, 230, 253, 0.3)';
+                ctx.moveTo(0, -20);
+                ctx.lineTo(-4, -120);
+                ctx.lineTo(4, -120);
+                ctx.fill();
+
+                // 3. Impact Shockwave (Last 20%)
+                if (progress > 0.8) {
+                    // Restore drawing context effectively to ground level implicitly by logic or check
+                    // Since currentY is very close to eff.y here, we draw locally
+                    const impactProgress = (progress - 0.8) * 5; // 0 to 1
+                    ctx.scale(1 + impactProgress, 0.5 + impactProgress * 0.5); // Flattened expansion
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgba(255, 255, 255, ${1 - impactProgress})`; // Fade out
+                    ctx.arc(0, 0, 40 * impactProgress, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 ctx.restore();
             }

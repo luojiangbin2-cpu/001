@@ -1,5 +1,6 @@
 
 
+
 export const TRANSLATIONS = {
   en: {
     // UI Buttons
@@ -127,8 +128,8 @@ export const TRANSLATIONS = {
     skill_fireball_desc: "Fires a projectile that deals Fire Damage.",
     skill_cyclone_name: "Cyclone",
     skill_cyclone_desc: "Channel to spin and attack enemies around you.",
-    skill_nova_name: "Ice Nova",
-    skill_nova_desc: "Cast a ring of ice projectiles.",
+    skill_nova_name: "Blizzard",
+    skill_nova_desc: "Summons ice shards to strike random enemies nearby. 100% Chill.",
     skill_flame_ring_name: "Flame Ring",
     skill_flame_ring_desc: "Knocks back nearby enemies with a burst of fire.",
     skill_pierce_name: "Pierce Support",
@@ -318,8 +319,8 @@ export const TRANSLATIONS = {
     skill_fireball_desc: "发射一枚造成火焰伤害的投射物。",
     skill_cyclone_name: "旋风斩",
     skill_cyclone_desc: "持续引导以旋转并攻击周围的敌人。",
-    skill_nova_name: "冰霜新星",
-    skill_nova_desc: "向周围释放一圈冰霜投射物。",
+    skill_nova_name: "暴风雪",
+    skill_nova_desc: "召唤冰凌打击附近的随机敌人。100% 冰缓。",
     skill_flame_ring_name: "抗拒火环",
     skill_flame_ring_desc: "释放火焰推开周围的敌人。",
     skill_pierce_name: "穿透",

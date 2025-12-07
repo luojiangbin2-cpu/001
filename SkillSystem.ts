@@ -39,17 +39,19 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
     'nova': {
         id: 'nova',
-        name: 'Ice Nova',
+        name: 'Blizzard',
         type: 'active',
-        tags: ['area', 'projectile', 'cold'], 
-        description: 'Explodes projectiles in a circle.',
+        tags: ['area', 'cold'], 
+        description: 'Summons ice shards to strike random enemies nearby. 100% Chill.',
         baseStats: {
-            damage: 20,
-            attackRate: 1.0,
-            projectileCount: 8,
-            projectileSpeed: 400,
-            projectileSpread: 360,
-            areaOfEffect: 0
+            damage: 30,
+            attackRate: 0.8,
+            projectileCount: 5,
+            projectileSpeed: 0,
+            projectileSpread: 0,
+            areaOfEffect: 0,
+            range: 450,
+            ailmentChance: 1.0
         }
     },
     'flame_ring': {
@@ -69,6 +71,20 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
 
     // SUPPORT GEMS
+    'pierce': {
+        id: 'pierce',
+        name: 'Pierce Support',
+        type: 'support',
+        tags: [],
+        supportedTags: ['projectile'],
+        description: 'Projectiles Pierce 2 additional Targets, 20% more Damage',
+        baseStats: {
+            pierceCount: 2
+        },
+        statMultipliers: {
+            damage: 1.2
+        }
+    },
     'lmp': {
         id: 'lmp',
         name: 'Lesser Multiple Projectiles',
@@ -182,7 +198,7 @@ export class SkillManager {
             projectileSpeed: definition.baseStats.projectileSpeed || 0,
             projectileSpread: definition.baseStats.projectileSpread || 0,
             duration: definition.baseStats.duration || 0,
-            ailmentChance: 0,
+            ailmentChance: definition.baseStats.ailmentChance || 0,
             knockback: definition.baseStats.knockback || 0,
             pierceCount: definition.baseStats.pierceCount || 0
         };
@@ -240,7 +256,7 @@ export class SkillManager {
         finalStats.projectileCount += (playerProjCount - 1);
         
         // Ailment Chance
-        finalStats.ailmentChance = playerStats.getStatValue('ailmentChance', activeTags);
+        finalStats.ailmentChance += playerStats.getStatValue('ailmentChance', activeTags);
         
         // Pierce Count
         finalStats.pierceCount += playerStats.getStatValue('pierceCount', activeTags);

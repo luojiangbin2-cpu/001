@@ -307,7 +307,7 @@ export interface SpriteConfig {
 export interface VisualEffect {
     id: number;
     active: boolean;
-    type: 'cyclone' | 'hit' | 'portal' | 'shockwave' | 'flame_ring_visual';
+    type: 'cyclone' | 'hit' | 'portal' | 'shockwave' | 'flame_ring_visual' | 'falling_ice';
     x: number;
     y: number;
     radius?: number;
