@@ -690,14 +690,14 @@ export const GameCanvas: React.FC = () => {
         {/* SUPPORT GEM QUICK LINK UI */}
         {isSelectingSupport && pendingGem && engineRef.current && (
              <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center animate-in fade-in duration-200">
-                 <h2 className="text-xl font-serif text-zinc-300 mb-2 tracking-widest">LINK GEM</h2>
+                 <h2 className="text-xl font-serif text-zinc-300 mb-2 tracking-widest">{t('ui_link_gem', language)}</h2>
                  <div className="flex items-center gap-2 mb-8 bg-zinc-900 p-3 rounded-lg border border-zinc-700">
                      <div className="w-10 h-10 bg-zinc-800 border-2 border-zinc-500 rounded-full flex items-center justify-center text-white font-bold text-xs">
                          {getAbbreviation(pendingGem.name, pendingGem)}
                      </div>
                      <div className="flex flex-col">
                         <span className="text-white font-bold text-sm">{t(`skill_${pendingGem.gemDefinitionId}_name`, language)}</span>
-                        <span className="text-zinc-500 text-[10px]">Select an active skill to support</span>
+                        <span className="text-zinc-500 text-[10px]">{t('ui_select_active', language)}</span>
                      </div>
                  </div>
 
@@ -728,7 +728,7 @@ export const GameCanvas: React.FC = () => {
                                      {hasActive ? getAbbreviation(skill.activeGem!.name, skill.activeGem!) : 'Empty'}
                                  </span>
                                  {hasActive && !compatible && (
-                                     <span className="absolute -top-2 -right-2 bg-red-600 text-[8px] px-1 rounded text-white">Incompatible</span>
+                                     <span className="absolute -top-2 -right-2 bg-red-600 text-[8px] px-1 rounded text-white">{t('ui_incompatible', language)}</span>
                                  )}
                              </button>
                          )
@@ -744,13 +744,13 @@ export const GameCanvas: React.FC = () => {
                         }}
                         className="px-6 py-2 bg-zinc-900 hover:bg-red-900/30 text-red-400 border border-red-900/50 rounded font-serif text-sm tracking-wider"
                      >
-                        RETURN
+                        {t('ui_return', language)}
                      </button>
                      <button 
                         onClick={handleStashSupport}
                         className="px-6 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-600 rounded font-serif text-sm tracking-wider"
                      >
-                        STASH TO BAG
+                        {t('ui_stash', language)}
                      </button>
                  </div>
              </div>
@@ -874,7 +874,7 @@ export const GameCanvas: React.FC = () => {
                                      <span className="text-xs text-center text-purple-200 font-bold mt-2">{selectedMap.name}</span>
                                  </div>
                              ) : (
-                                 <span className="text-purple-800 text-xs text-center font-mono">SELECT MAP<br/>FROM BAG</span>
+                                 <span className="text-purple-800 text-xs text-center font-mono whitespace-pre-line">{t('ui_map_select', language)}</span>
                              )}
                         </div>
                         
@@ -893,7 +893,7 @@ export const GameCanvas: React.FC = () => {
                                     ))}
                                 </div>
                             ) : (
-                                <div className="text-zinc-600 text-xs italic text-center mt-6">No Map Selected</div>
+                                <div className="text-zinc-600 text-xs italic text-center mt-6">{t('ui_no_map_selected', language)}</div>
                             )}
                         </div>
 
@@ -905,7 +905,7 @@ export const GameCanvas: React.FC = () => {
                                     : 'bg-green-700 hover:bg-green-600 text-green-100 shadow-[0_0_15px_rgba(21,128,61,0.4)]'
                                 }`}
                         >
-                            {selectedMap ? "ACTIVATE" : "FREE RUN (T1)"}
+                            {selectedMap ? t('ui_activate', language) : t('ui_free_run', language)}
                         </button>
                     </div>
                      {/* Inventory Strip */}
@@ -1050,7 +1050,7 @@ export const GameCanvas: React.FC = () => {
                                 );
                             })() : (
                                 <div className="mt-12 text-zinc-700 font-serif italic text-sm tracking-widest border border-zinc-800/50 px-6 py-2 rounded-full">
-                                    SLOT EMPTY
+                                    {t('ui_slot_empty', language)}
                                 </div>
                             )}
                         </div>
@@ -1061,12 +1061,12 @@ export const GameCanvas: React.FC = () => {
                             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
                             
                             <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-3 relative z-10 pl-1 flex items-center justify-between">
-                                <span>RUNE STORAGE</span>
+                                <span>{t('ui_rune_storage', language)}</span>
                                 <button 
                                     onClick={() => setAutoSort(!autoSort)}
                                     className={`text-[9px] px-2 py-0.5 rounded border border-white/10 transition-colors ${autoSort ? 'bg-cyan-900 text-cyan-200 border-cyan-700' : 'bg-zinc-900 text-zinc-500'}`}
                                 >
-                                    AUTO-SORT: {autoSort ? 'ON' : 'OFF'}
+                                    {t('ui_auto_sort', language)}: {autoSort ? t('ui_on', language) : t('ui_off', language)}
                                 </button>
                             </h3>
                             
@@ -1162,7 +1162,7 @@ export const GameCanvas: React.FC = () => {
                     <div className="flex-1 overflow-hidden flex flex-col w-full">
                         <div className="w-full bg-zinc-900/50 p-3 border-b border-zinc-800 shrink-0 flex justify-between items-start">
                              <div>
-                                <h3 className="text-zinc-600 text-[10px] font-bold uppercase tracking-wider mb-2">Attributes</h3>
+                                <h3 className="text-zinc-600 text-[10px] font-bold uppercase tracking-wider mb-2">{t('ui_attributes', language)}</h3>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[11px]">
                                     <StatRow label={t('stat_damage', language)} value={engineRef.current.playerStats.getStatValue('bulletDamage').toFixed(0)} />
                                     {/* FIX: Ensure UI always displays the HP from synced HUD state to avoid glitches */}
@@ -1209,19 +1209,19 @@ export const GameCanvas: React.FC = () => {
                                 onClick={() => { setInventoryTab('equipment'); setBackpackPage(0); }}
                                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${inventoryTab === 'equipment' ? 'text-yellow-500 border-b-2 border-yellow-500 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300'}`}
                             >
-                                Equipment
+                                {t('ui_tab_equipment', language)}
                             </button>
                             <button 
                                 onClick={() => { setInventoryTab('map'); setBackpackPage(0); }}
                                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${inventoryTab === 'map' ? 'text-purple-500 border-b-2 border-purple-500 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300'}`}
                             >
-                                Maps
+                                {t('ui_tab_maps', language)}
                             </button>
                             <button 
                                 onClick={() => setAutoSort(!autoSort)}
                                 className={`px-4 py-2 mr-2 text-[10px] font-bold uppercase rounded border border-white/10 transition-colors ${autoSort ? 'bg-cyan-900 text-cyan-200 border-cyan-700' : 'bg-zinc-800 text-zinc-500'}`}
                             >
-                                SORT: {autoSort ? 'ON' : 'OFF'}
+                                {t('ui_sort', language)}: {autoSort ? t('ui_on', language) : t('ui_off', language)}
                             </button>
                         </div>
 
@@ -1230,7 +1230,7 @@ export const GameCanvas: React.FC = () => {
                             <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
                                 <span>{t('ui_bag', language)}</span>
                                 <div className="flex gap-2 items-center">
-                                    <span className="text-zinc-600 mr-2">{filteredBackpack.length} Items</span>
+                                    <span className="text-zinc-600 mr-2">{t('ui_items_count', language, {n: filteredBackpack.length})}</span>
                                     {totalBackpackPages > 1 && (
                                         <div className="flex gap-1 text-[10px] text-zinc-400 bg-zinc-800 rounded px-1">
                                             <button 
