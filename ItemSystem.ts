@@ -420,32 +420,43 @@ export const generateRewards = (level: number, excludedActiveGemIds: string[] = 
         // If no active skills available (collected all), fallback to Stat or Support
         let typeRoll = roll;
         if (activeSkills.length === 0 && typeRoll >= 0.4 && typeRoll < 0.7) {
-            typeRoll = 0.8; // Force into support or (if unlucky logic) just skip.
+            typeRoll = 0.8; // Force into support
         }
 
         if (typeRoll < 0.4) {
             const stat = STAT_UPGRADES[Math.floor(Math.random() * STAT_UPGRADES.length)];
             rewards.push({ ...stat }); // Keep original ID for translation lookups
-        } else if (typeRoll < 0.7 && activeSkills.length > 0) {
-            const gemId = activeSkills[Math.floor(Math.random() * activeSkills.length)];
-            const def = SKILL_DATABASE[gemId];
-            const item = createGemItem(gemId);
-            rewards.push({
-                id: item.id, // item.id is uuid() from createGemItem
-                name: def.name,
-                description: def.description,
-                color: 'bg-cyan-600',
-                gemItem: item
-            });
         } else {
-            const gemId = supportSkills[Math.floor(Math.random() * supportSkills.length)];
+            let gemId: string;
+            // Determine Gem Pool based on roll
+            if (typeRoll < 0.7 && activeSkills.length > 0) {
+                 gemId = activeSkills[Math.floor(Math.random() * activeSkills.length)];
+            } else {
+                 gemId = supportSkills[Math.floor(Math.random() * supportSkills.length)];
+            }
+
             const def = SKILL_DATABASE[gemId];
             const item = createGemItem(gemId);
+
+            // Determine Color based on tags
+            let color = def.type === 'active' ? 'bg-blue-600' : 'bg-zinc-600';
+            
+            // Check own tags and supported tags
+            const tagsToCheck = [...(def.tags || []), ...(def.supportedTags || [])];
+            
+            if (tagsToCheck.includes('fire')) {
+                color = 'bg-orange-600';
+            } else if (tagsToCheck.includes('projectile')) {
+                color = 'bg-emerald-600';
+            } else if (tagsToCheck.includes('cold')) {
+                color = 'bg-cyan-600';
+            }
+
             rewards.push({
                 id: item.id, // item.id is uuid() from createGemItem
                 name: def.name,
                 description: def.description,
-                color: 'bg-zinc-600',
+                color: color,
                 gemItem: item
             });
         }

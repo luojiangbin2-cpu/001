@@ -24,6 +24,7 @@ export class StatsSystem {
     // Initialize default ailment chance as requested (15%)
     this.setBase('ailmentChance', 0.15);
     this.setBase('xpGain', 1.0);
+    this.setBase('pierceCount', 0);
   }
 
   /**

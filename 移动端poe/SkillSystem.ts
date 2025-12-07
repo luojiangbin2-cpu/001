@@ -69,6 +69,20 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
 
     // SUPPORT GEMS
+    'pierce': {
+        id: 'pierce',
+        name: 'Pierce Support',
+        type: 'support',
+        tags: [],
+        supportedTags: ['projectile'],
+        description: 'Projectiles Pierce 2 additional Targets, 20% more Damage',
+        baseStats: {
+            pierceCount: 2
+        },
+        statMultipliers: {
+            damage: 1.2
+        }
+    },
     'lmp': {
         id: 'lmp',
         name: 'Lesser Multiple Projectiles',

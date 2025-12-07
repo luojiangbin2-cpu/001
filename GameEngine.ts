@@ -1454,7 +1454,7 @@ export class GameEngine {
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
 
             for (let i = 0; i < safeCount; i++) {
-                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, 0, skill.stats.ailmentChance);
+                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance);
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -1509,6 +1509,7 @@ export class GameEngine {
         const dmg = this.playerStats.getStatValue('bulletDamage');
         const count = Math.max(1, Math.floor(this.playerStats.getStatValue('projectileCount')));
         const ailmentChance = this.playerStats.getStatValue('ailmentChance'); // Base chance for basic attack
+        const pierce = Math.floor(this.playerStats.getStatValue('pierceCount')); // Retrieve global pierce count
 
         const speed = 400;
         
@@ -1516,7 +1517,7 @@ export class GameEngine {
         const startAngle = angle - ((count - 1) * spreadRad) / 2;
 
         for (let i = 0; i < count; i++) {
-            this.spawnBullet(px, py, startAngle + i * spreadRad, 'player', speed, 12, '#93c5fd', 'physical', dmg, 0, ailmentChance);
+            this.spawnBullet(px, py, startAngle + i * spreadRad, 'player', speed, 12, '#93c5fd', 'physical', dmg, pierce, ailmentChance);
         }
     }
 

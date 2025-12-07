@@ -32,7 +32,8 @@ export type StatKey =
     | 'range' 
     | 'duration' 
     | 'cooldown'
-    | 'attackRate';
+    | 'attackRate'
+    | 'pierceCount';
 
 export interface ItemAffixInstance {
     definitionId: string;
@@ -67,6 +68,7 @@ export interface SkillStats {
     duration: number;
     ailmentChance: number;
     knockback: number;
+    pierceCount: number;
 }
 
 export interface SkillDefinition {
