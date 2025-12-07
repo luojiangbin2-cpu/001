@@ -1,5 +1,6 @@
 
 
+
 import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag } from "./types";
 import { StatsSystem } from "./StatsSystem";
 
@@ -89,6 +90,22 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
 
     // SUPPORT GEMS
+    'orbit': {
+        id: 'orbit',
+        name: 'Orbit Support',
+        type: 'support',
+        tags: [],
+        supportedTags: ['projectile'],
+        description: 'Projectiles orbit around the caster.',
+        baseStats: {
+            orbit: 1,
+            duration: 2.0
+        },
+        statMultipliers: {
+            projectileSpeed: 0.5,
+            damage: 0.8
+        }
+    },
     'pierce': {
         id: 'pierce',
         name: 'Pierce Support',
@@ -218,7 +235,8 @@ export class SkillManager {
             duration: definition.baseStats.duration || 0,
             ailmentChance: definition.baseStats.ailmentChance || 0,
             knockback: definition.baseStats.knockback || 0,
-            pierceCount: definition.baseStats.pierceCount || 0
+            pierceCount: definition.baseStats.pierceCount || 0,
+            orbit: definition.baseStats.orbit || 0
         };
 
         const activeTags = definition.tags; // This is the context for StatsSystem
@@ -241,6 +259,8 @@ export class SkillManager {
                         if (supportDef.baseStats.cooldown) finalStats.cooldown += supportDef.baseStats.cooldown;
                         if (supportDef.baseStats.areaOfEffect) finalStats.areaOfEffect += supportDef.baseStats.areaOfEffect;
                         if (supportDef.baseStats.pierceCount) finalStats.pierceCount += supportDef.baseStats.pierceCount;
+                        if (supportDef.baseStats.duration) finalStats.duration += supportDef.baseStats.duration;
+                        if (supportDef.baseStats.orbit) finalStats.orbit += supportDef.baseStats.orbit;
                     }
 
                     // Apply Multipliers

@@ -69,6 +69,7 @@ export interface SkillStats {
     ailmentChance: number;
     knockback: number;
     pierceCount: number;
+    orbit: number; // 0 = disabled, 1 = enabled
 }
 
 export interface SkillDefinition {
@@ -164,6 +165,11 @@ export interface Bullet extends Entity {
     pierce: number;
     ailmentChance: number;
     damage?: number;
+    // Orbit Support Props
+    behavior?: 'normal' | 'orbit';
+    orbitAngle?: number;
+    orbitRadius?: number;
+    initialSpeed?: number;
 }
 
 export interface Loot extends Entity {

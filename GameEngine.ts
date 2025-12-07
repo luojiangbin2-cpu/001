@@ -1,5 +1,4 @@
 
-
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect, MapStats } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem, AFFIX_DATABASE, createEndlessKey } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -513,796 +512,7 @@ export class GameEngine {
         this.joystickState.vector = { x: 0, y: 0 };
     }
 
-    // --- MAP SYSTEM & EXPEDITION LOOP ---
-    
-    public activateMap(mapItem: ItemInstance) {
-        if (mapItem.type !== 'map') return;
-        
-        // Remove map from bag (Simple consumption logic)
-        const idx = this.gameState.backpack.findIndex(i => i.id === mapItem.id);
-        if (idx > -1) {
-             // If stack logic exists later
-             if (mapItem.stackSize && mapItem.stackSize > 1) {
-                 mapItem.stackSize--;
-             } else {
-                 this.gameState.backpack.splice(idx, 1);
-             }
-        }
-        this.callbacks.onInventoryChange();
-
-        // --- Endless Mode Check ---
-        if (mapItem.gemDefinitionId === 'map_endless_void') {
-            this.gameState.isEndlessMode = true;
-            this.gameState.currentFloor = 1;
-            
-            // Endless Mode Initial State: No bonuses, pure baseline
-            this.gameState.currentMapStats = {
-                tier: 1,
-                monsterHealthMult: 1.0,
-                monsterDamageMult: 1.0,
-                packSizeMult: 1.0,
-                xpMult: 1.0,
-                rarityMult: 1.0
-            };
-            
-            this.gameState.targetKills = 50; // Floor 1 target
-            this.callbacks.onNotification("⚔️ ENDLESS MODE STARTED ⚔️");
-
-        } else {
-            // --- Normal Map Logic ---
-            this.gameState.isEndlessMode = false;
-
-            const mapStats: MapStats = {
-                tier: mapItem.level,
-                monsterHealthMult: 1 + (mapItem.level * 0.1), 
-                monsterDamageMult: 1 + (mapItem.level * 0.1),
-                packSizeMult: 1,
-                xpMult: 1 + (mapItem.level * 0.05),
-                rarityMult: 1
-            };
-
-            for (const affix of mapItem.affixes) {
-                const val = affix.value;
-                switch(affix.stat) {
-                    case 'monsterHealth': mapStats.monsterHealthMult += val; mapStats.xpMult += val * 0.5; break;
-                    case 'monsterDamage': mapStats.monsterDamageMult += val; mapStats.xpMult += val * 0.5; break;
-                    case 'monsterPackSize': mapStats.packSizeMult += val; break;
-                    case 'xpGain': mapStats.xpMult += val; break;
-                    case 'itemRarity': mapStats.rarityMult += val; break;
-                }
-            }
-
-            // Rarity Bonuses
-            if (mapItem.rarity === 'magic') { mapStats.rarityMult += 0.2; mapStats.packSizeMult += 0.1; }
-            if (mapItem.rarity === 'rare') { mapStats.rarityMult += 0.5; mapStats.packSizeMult += 0.2; }
-            if (mapItem.rarity === 'unique') { mapStats.rarityMult += 1.0; mapStats.xpMult += 0.5; }
-
-            this.gameState.currentMapStats = mapStats;
-            this.gameState.currentFloor = 1;
-            this.gameState.targetKills = 50 + (1 * 50) + (mapStats.tier * 30); 
-            
-            this.callbacks.onNotification(`Expedition Started: Floor 1`);
-        }
-
-        // --- Common Initialization ---
-        this.gameState.worldState = 'RUN';
-        this.gameState.expeditionActive = true;
-        this.gameState.currentKills = 0;
-        this.gameState.playerWorldPos = { x: 0, y: 0 };
-        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
-        
-        // Clear Entities
-        this.enemies.forEach(e => e.active = false);
-        this.bullets.forEach(b => b.active = false);
-        this.loot.forEach(l => l.active = false);
-        this.xpOrbs.forEach(o => o.active = false);
-        this.gameState.groundEffects = [];
-        this.gameState.interactables = [];
-        this.gameState.npcs = []; 
-        this.gameState.particles = [];
-
-        this.saveGame();
-        this.updateHud();
-    }
-
-    public activateFreeRun() {
-        const freeMap = generateItem('map', 1, 'normal');
-        this.activateMap(freeMap);
-    }
-
-    private enterNextFloor() {
-        this.gameState.currentFloor += 1;
-        this.gameState.currentKills = 0;
-        this.gameState.playerWorldPos = { x: 0, y: 0 };
-        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
-
-        // Clear Entities
-        this.enemies.forEach(e => e.active = false);
-        this.bullets.forEach(b => b.active = false);
-        this.loot.forEach(l => l.active = false); 
-        this.xpOrbs.forEach(o => o.active = false);
-        this.gameState.groundEffects = [];
-        this.gameState.interactables = [];
-        this.gameState.particles = [];
-
-        if (this.gameState.isEndlessMode) {
-            // --- Endless Mode Logic ---
-            const floor = this.gameState.currentFloor;
-            
-            // Infinite Scaling (Additive to preserve previous stacks)
-            this.gameState.currentMapStats.monsterHealthMult += 0.1;
-            this.gameState.currentMapStats.monsterDamageMult += 0.05;
-            this.gameState.currentMapStats.xpMult += 0.05;
-
-            // Environmental Deterioration (Every 5 floors)
-            if (floor % 5 === 0) {
-                 const mapAffixes = AFFIX_DATABASE.filter(a => a.validSlots.includes('map'));
-                 if (mapAffixes.length > 0) {
-                     const affix = mapAffixes[Math.floor(Math.random() * mapAffixes.length)];
-                     // Roll value between min and max
-                     const val = affix.minVal + Math.random() * (affix.maxVal - affix.minVal);
-                     
-                     switch(affix.stat) {
-                        case 'monsterHealth': 
-                            this.gameState.currentMapStats.monsterHealthMult += val; 
-                            // Map mods usually give XP/Quant too
-                            this.gameState.currentMapStats.xpMult += val * 0.5; 
-                            break;
-                        case 'monsterDamage': 
-                            this.gameState.currentMapStats.monsterDamageMult += val; 
-                            this.gameState.currentMapStats.xpMult += val * 0.5; 
-                            break;
-                        case 'monsterPackSize': 
-                            this.gameState.currentMapStats.packSizeMult += val; 
-                            break;
-                        case 'xpGain': 
-                            this.gameState.currentMapStats.xpMult += val; 
-                            break;
-                        case 'itemRarity': 
-                            this.gameState.currentMapStats.rarityMult += val; 
-                            break;
-                     }
-                     
-                     this.callbacks.onNotification("环境恶化：" + affix.name + " (T" + floor + ")");
-                 }
-            }
-
-            // Increase Kill Target
-            this.gameState.targetKills = 50 + (floor * 10);
-
-            this.callbacks.onNotification(`Endless Floor ${floor} (HP x${this.gameState.currentMapStats.monsterHealthMult.toFixed(1)})`);
-        } else {
-            // --- Normal Mode Logic ---
-            this.gameState.currentMapStats.monsterHealthMult *= 1.1; 
-            this.gameState.currentMapStats.monsterDamageMult *= 1.1;
-            
-            // Floor 5 is Boss Floor
-            if (this.gameState.currentFloor === 5) {
-                 this.gameState.targetKills = 1; 
-                 this.spawnEnemy('boss');
-                 this.directorState.bossSpawned = true;
-                 this.callbacks.onNotification(`FLOOR 5: BOSS ENCOUNTER`);
-            } else {
-                 this.gameState.targetKills = 50 + (this.gameState.currentFloor * 50) + (this.gameState.currentMapStats.tier * 30);
-                 this.callbacks.onNotification(`Descended to Floor ${this.gameState.currentFloor}`);
-            }
-        }
-
-        this.saveGame();
-        this.updateHud();
-    }
-
-    private finalizeRun() {
-        this.gameState.worldState = 'HIDEOUT';
-        this.gameState.playerWorldPos = { x: 0, y: 0 };
-        this.currentHp = this.playerStats.getStatValue('maxHp');
-        this.enemies.forEach(e => e.active = false);
-        this.bullets.forEach(b => b.active = false);
-        this.loot.forEach(l => l.active = false);
-        this.xpOrbs.forEach(o => o.active = false);
-        this.gameState.groundEffects = [];
-        this.gameState.particles = [];
-        this.gameState.expeditionActive = false;
-        this.gameState.currentFloor = 0;
-        
-        // ROGUELIKE RESET
-        this.gameState.activeSkills = [
-            createEmptySkillSlot(0), createEmptySkillSlot(1),
-            createEmptySkillSlot(2), createEmptySkillSlot(3)
-        ];
-        this.gameState.gemInventory = [];
-        this.gameState.level = 1;
-        this.gameState.xp = 0;
-        this.gameState.nextLevelXp = BASE_XP_TO_LEVEL;
-        this.chosenUpgrades = [];
-        this.recalculateStats();
-        this.currentHp = this.playerStats.getStatValue('maxHp'); 
-
-        // Setup Hideout
-        const mapDevice: Interactable = {
-            id: 999,
-            active: true,
-            type: 'map_device',
-            x: 0,
-            y: -200,
-            width: 80,
-            height: 80,
-            color: '#c026d3',
-            interactionRadius: 100,
-            label: 'Map Device'
-        };
-        const merchant: NPC = {
-            id: 888,
-            active: true,
-            type: 'merchant',
-            name: "Merchant",
-            x: 100,
-            y: -50,
-            width: 50,
-            height: 50,
-            color: '#22c55e',
-            interactionRadius: 80
-        };
-        this.gameState.interactables = [mapDevice];
-        this.gameState.npcs = [merchant];
-
-        this.callbacks.onNotification("Run Complete - Character Reset");
-        this.saveGame();
-        this.updateHud();
-        this.callbacks.onInventoryChange();
-    }
-    
-    public returnToHideout() {
-        this.finalizeRun();
-    }
-
-    // --- ITEM & STAT SYSTEM ---
-
-    public sellBatch(mode: 'normal' | 'magic' | 'rare' | 'all_junk') {
-        const backpack = this.gameState.backpack;
-        let itemsToSell: ItemInstance[] = [];
-
-        if (mode === 'all_junk') {
-            itemsToSell = backpack.filter(i => (i.rarity === 'normal' || i.rarity === 'magic') && i.type === 'equipment');
-        } else {
-            itemsToSell = backpack.filter(i => i.rarity === mode && i.type === 'equipment');
-        }
-
-        if (itemsToSell.length === 0) {
-            this.callbacks.onNotification("No matching equipment to sell.");
-            return;
-        }
-
-        let totalValue = 0;
-        const PRICES: Record<string, number> = { normal: 5, magic: 10, rare: 20, unique: 50 };
-
-        itemsToSell.forEach(item => {
-            totalValue += PRICES[item.rarity] || 1;
-        });
-
-        // Remove sold items
-        this.gameState.backpack = this.gameState.backpack.filter(i => !itemsToSell.includes(i));
-        this.gameState.gold += totalValue;
-
-        this.callbacks.onNotification(`Sold ${itemsToSell.length} items for ${totalValue} Gold`);
-        this.callbacks.onInventoryChange();
-        this.updateHud();
-        this.saveGame();
-    }
-
-    public sellSingleItem(item: ItemInstance) {
-        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
-        if (backpackIndex === -1) return;
-
-        let price = 0;
-        switch (item.rarity) {
-            case 'normal': price = 5; break;
-            case 'magic': price = 10; break;
-            case 'rare': price = 20; break;
-            case 'unique': price = 100; break;
-        }
-
-        this.gameState.backpack.splice(backpackIndex, 1);
-        this.gameState.gold += price;
-
-        this.callbacks.onNotification(`Sold ${item.name} for ${price} Gold`);
-        this.callbacks.onInventoryChange();
-        this.updateHud();
-        this.saveGame();
-    }
-
-    private recalculateStats() {
-        this.playerStats.reset();
-        
-        const level = this.gameState.level;
-
-        this.playerStats.setBase('moveSpeed', 3.0);
-        this.playerStats.setBase('attackSpeed', 1.0);
-        
-        // Base Damage = 10 + (Current Level * 2)
-        this.playerStats.setBase('bulletDamage', 10 + (level * 2));
-        
-        this.playerStats.setBase('projectileCount', 1);
-        this.playerStats.setBase('projectileSpread', 15);
-        
-        // Base HP = 100 + (Current Level * 10)
-        this.playerStats.setBase('maxHp', 100 + (level * 10));
-        
-        this.playerStats.setBase('hpRegen', 0);
-        this.playerStats.setBase('critChance', 0.05);
-        this.playerStats.setBase('critMultiplier', 1.5);
-        this.playerStats.setBase('defense', 0);
-        // Base Ailment Chance = 15%
-        this.playerStats.setBase('ailmentChance', 0.15);
-  
-        for (const upg of this.chosenUpgrades) {
-            if (upg.stat && upg.type && upg.value) {
-                this.playerStats.addModifier(upg.stat, upg.type, upg.value, upg.tags);
-            }
-        }
-  
-        const equipment = this.gameState.equipment;
-        Object.keys(equipment).forEach((key) => {
-            const slot = key as ItemSlot;
-            const item = equipment[slot];
-            if (!item) return;
-  
-            for (const affix of item.affixes) {
-                if (['monsterHealth', 'monsterDamage', 'monsterPackSize'].includes(affix.stat)) continue;
-                this.playerStats.addModifier(affix.stat as StatKey, affix.valueType, affix.value, affix.tags);
-            }
-        });
-
-        // --- HP SYNC FIX ---
-        const finalMaxHp = this.playerStats.getStatValue('maxHp');
-        // Cap current health to new max health to prevent overflow
-        if (this.currentHp > finalMaxHp) {
-            this.currentHp = finalMaxHp;
-        }
-
-        // Notify UI immediately to update stats panel and HUD
-        this.updateHud(); 
-        this.callbacks.onInventoryChange();
-    }
-
-    public equipItem(item: ItemInstance) {
-        if (item.type === 'gem' || item.type === 'map') return; 
-
-        // Smart Ring Logic: Auto-target empty slot or default to ring1
-        if (item.slot === 'ring1' || item.slot === 'ring2') {
-             if (!this.gameState.equipment.ring1) {
-                 item.slot = 'ring1';
-             } else if (!this.gameState.equipment.ring2) {
-                 item.slot = 'ring2';
-             } else {
-                 item.slot = 'ring1'; // Default replace ring1
-             }
-        }
-
-        const currentEquipped = this.gameState.equipment[item.slot as ItemSlot];
-        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
-        if (backpackIndex > -1) {
-            this.gameState.backpack.splice(backpackIndex, 1);
-        }
-        if (currentEquipped) {
-            this.gameState.backpack.push(currentEquipped);
-        }
-        this.gameState.equipment[item.slot as ItemSlot] = item;
-        this.recalculateStats(); 
-        this.saveGame();
-        // onInventoryChange called inside recalculateStats now, but safe to call again or remove
-        // Leaving it here ensures flow is clear
-    }
-
-    public unequipItem(slot: ItemSlot) {
-        if (slot === 'gem' as any) return; 
-        const item = this.gameState.equipment[slot];
-        if (!item) return;
-        if (this.gameState.backpack.length >= BACKPACK_CAPACITY) {
-            this.callbacks.onNotification("Backpack Full!");
-            return;
-        }
-        this.gameState.backpack.push(item);
-        this.gameState.equipment[slot] = null;
-        this.recalculateStats(); 
-        this.saveGame();
-    }
-
-    // --- GEM MANAGEMENT ---
-
-    public equipGem(gemItem: ItemInstance, skillIndex: number, isSupport: boolean, subSlotIndex: number = -1) {
-        const activeSkill = this.gameState.activeSkills[skillIndex];
-        if (!activeSkill) return;
-
-        const gemDef = SKILL_DATABASE[gemItem.gemDefinitionId || ''];
-        if (!gemDef) return;
-
-        if (isSupport) {
-            if (gemDef.type !== 'support') {
-                this.callbacks.onNotification("Must be Support Gem!");
-                return;
-            }
-            if (!activeSkill.activeGem) {
-                this.callbacks.onNotification("Active Skill Required!");
-                return;
-            }
-            if (!SkillManager.checkCompatibility(activeSkill.activeGem.gemDefinitionId!, gemItem.gemDefinitionId!)) {
-                this.callbacks.onNotification("Incompatible Gem Tags!");
-                return;
-            }
-        } else {
-            if (gemDef.type !== 'active') {
-                this.callbacks.onNotification("Must be Active Gem!");
-                return;
-            }
-        }
-
-        let targetSubSlot = subSlotIndex;
-        if (isSupport && targetSubSlot === -1) {
-            targetSubSlot = activeSkill.supportGems.findIndex(g => g === null);
-            if (targetSubSlot === -1) targetSubSlot = 0; 
-        }
-
-        if (isSupport && gemItem.gemDefinitionId) {
-             const isDuplicate = activeSkill.supportGems.some((existingGem, idx) => {
-                 if (idx === targetSubSlot) return false;
-                 if (!existingGem) return false;
-                 return existingGem.gemDefinitionId === gemItem.gemDefinitionId;
-             });
-
-             if (isDuplicate) {
-                 this.callbacks.onNotification("Cannot stack identical Support Gems.");
-                 return;
-             }
-        }
-
-        const invIndex = this.gameState.gemInventory.findIndex(i => i.id === gemItem.id);
-        if (invIndex > -1) this.gameState.gemInventory.splice(invIndex, 1);
-
-        let existingItem: ItemInstance | null = null;
-        if (isSupport) {
-            existingItem = activeSkill.supportGems[targetSubSlot];
-            activeSkill.supportGems[targetSubSlot] = gemItem;
-        } else {
-            existingItem = activeSkill.activeGem;
-            activeSkill.activeGem = gemItem;
-            activeSkill.cooldownTimer = 0; 
-        }
-
-        if (existingItem) {
-            this.gameState.gemInventory.push(existingItem);
-        }
-        
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public unequipGem(skillIndex: number, isSupport: boolean, subSlotIndex: number) {
-        const activeSkill = this.gameState.activeSkills[skillIndex];
-        if (!activeSkill) return;
-
-        let itemToUnequip: ItemInstance | null = null;
-        if (isSupport) {
-            itemToUnequip = activeSkill.supportGems[subSlotIndex];
-            activeSkill.supportGems[subSlotIndex] = null;
-        } else {
-            itemToUnequip = activeSkill.activeGem;
-            activeSkill.activeGem = null;
-        }
-
-        if (itemToUnequip) {
-            this.gameState.gemInventory.push(itemToUnequip);
-        }
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public equipSupportToSkill(skillIndex: number) {
-        if (!this.gameState.pendingSupportGem) return;
-        
-        const skill = this.gameState.activeSkills[skillIndex];
-        const gem = this.gameState.pendingSupportGem;
-        
-        let emptySlot = skill.supportGems.findIndex(g => g === null);
-        if (emptySlot === -1) emptySlot = 0; 
-
-        const isDuplicate = skill.supportGems.some((existingGem, idx) => {
-             if (idx === emptySlot && skill.supportGems[idx] === null) return false; 
-             if (idx === emptySlot) return false; 
-             if (!existingGem) return false;
-             return existingGem.gemDefinitionId === gem.gemDefinitionId;
-        });
-
-        if (isDuplicate) {
-             this.callbacks.onNotification("Cannot stack identical Support Gems.");
-             return;
-        }
-
-        skill.supportGems[emptySlot] = gem;
-        this.gameState.pendingSupportGem = null;
-        this.gameState.isSelectingSupport = false;
-        this.gameState.isPaused = false;
-        this.gameState.lastFrameTime = performance.now();
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public stashPendingSupportGem() {
-        if (!this.gameState.pendingSupportGem) return;
-        this.gameState.gemInventory.push(this.gameState.pendingSupportGem);
-        this.callbacks.onNotification("Gem moved to Pouch");
-        this.gameState.pendingSupportGem = null;
-        this.gameState.isSelectingSupport = false;
-        this.gameState.isPaused = false;
-        this.gameState.lastFrameTime = performance.now();
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public cancelSupportSelection() {
-        this.gameState.pendingSupportGem = null;
-        this.gameState.isSelectingSupport = false;
-        // Do not modify isPaused state, because the player is still in the level up screen
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public selectUpgrade(upgrade: UpgradeDefinition) {
-        if (upgrade.gemItem) {
-            const gemDef = SKILL_DATABASE[upgrade.gemItem.gemDefinitionId!];
-            if (gemDef.type === 'active') {
-                const emptyIndex = this.gameState.activeSkills.findIndex(s => s.activeGem === null);
-                if (emptyIndex !== -1) {
-                    this.gameState.activeSkills[emptyIndex].activeGem = upgrade.gemItem;
-                    this.gameState.activeSkills[emptyIndex].cooldownTimer = 0;
-                    this.callbacks.onNotification(`Learned ${gemDef.name}!`);
-                } else {
-                    this.gameState.gemInventory.push(upgrade.gemItem);
-                    this.callbacks.onNotification(`${gemDef.name} added to Bag`);
-                }
-            } else if (gemDef.type === 'support') {
-                const hasActiveSkill = this.gameState.activeSkills.some(s => s.activeGem !== null);
-                if (hasActiveSkill) {
-                    this.gameState.pendingSupportGem = upgrade.gemItem;
-                    this.gameState.isSelectingSupport = true;
-                    return; 
-                } else {
-                    this.gameState.gemInventory.push(upgrade.gemItem);
-                    this.callbacks.onNotification(`Stashed ${gemDef.name} (No Active Skills)`);
-                }
-            }
-        } else {
-            this.chosenUpgrades.push(upgrade);
-            if (upgrade.stat === 'maxHp' && upgrade.value) {
-                this.currentHp += upgrade.value; 
-            }
-            this.recalculateStats();
-        }
-
-        this.gameState.level += 1;
-        this.gameState.xp -= this.gameState.nextLevelXp;
-        // Steep XP Curve: 150 * (1.25 ^ (Level - 1))
-        this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
-        
-        this.gameState.isPaused = false;
-        this.gameState.lastFrameTime = performance.now();
-        
-        this.saveGame();
-        this.updateHud();
-    }
-
-    private triggerLevelUp() {
-        this.gameState.isPaused = true;
-        const ownedActiveGemIds: string[] = [];
-        
-        this.gameState.activeSkills.forEach(s => {
-            if (s.activeGem && s.activeGem.gemDefinitionId) {
-                ownedActiveGemIds.push(s.activeGem.gemDefinitionId);
-            }
-        });
-
-        this.gameState.gemInventory.forEach(item => {
-            if (item.gemDefinitionId) {
-                const def = SKILL_DATABASE[item.gemDefinitionId];
-                if (def && def.type === 'active') {
-                    ownedActiveGemIds.push(item.gemDefinitionId);
-                }
-            }
-        });
-
-        const options = generateRewards(this.gameState.level, ownedActiveGemIds);
-        this.callbacks.onLevelUp(options);
-    }
-
-    private gainXp(amount: number) {
-        // Level Gap Penalty Logic
-        let penaltyMultiplier = 1.0;
-        // Default Tier 1 if hideout or unknown
-        const mapTier = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1; 
-        const playerLevel = this.gameState.level;
-        
-        // If Player is significantly higher than map tier
-        if (playerLevel > mapTier + 3) {
-            // Severe Penalty: (MapTier / PlayerLevel) ^ 4
-            penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
-        }
-
-        // Apply Stats Multiplier (Wisdom, etc)
-        const xpMult = this.playerStats.getStatValue('xpGain');
-
-        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier * xpMult));
-        
-        this.gameState.xp += effectiveXp;
-        if (this.gameState.xp >= this.gameState.nextLevelXp) {
-            this.triggerLevelUp();
-        } else {
-            this.updateHud();
-        }
-    }
-
-    private spawnXPOrb(x: number, y: number, value: number) {
-        const orb = this.xpOrbs.find(o => !o.active);
-        if (orb) {
-            orb.active = true;
-            orb.x = x + (Math.random() - 0.5) * 20;
-            orb.y = y + (Math.random() - 0.5) * 20;
-            orb.value = value;
-            orb.magnetized = false;
-            
-            // Tier Logic
-            if (value >= 500) orb.tier = 'gold';
-            else if (value >= 150) orb.tier = 'pink';
-            else if (value >= 50) orb.tier = 'purple';
-            else orb.tier = 'blue';
-        }
-    }
-
-    // --- GAMEPLAY HELPERS ---
-
-    private checkCollision(rect1: Entity, rect2: Entity) {
-        return (rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y);
-    }
-
-    private spawnLoot(x: number, y: number, force = false, chanceOverride?: number) {
-        // Base probability calculation: 2% by default
-        let finalChance = chanceOverride ?? LOOT_CHANCE;
-        
-        if (this.gameState.worldState === 'RUN') {
-            // Scale chance by map rarity multiplier (Base 1 + bonuses)
-            finalChance *= this.gameState.currentMapStats.rarityMult; 
-        }
-
-        if (!force && Math.random() > finalChance) return;
-        
-        const loot = this.loot.find(l => !l.active);
-        if (loot) {
-            const roll = Math.random();
-            let rarity: ItemRarity = 'normal';
-            const rarityBoost = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.rarityMult : 1;
-            
-            // REMOVED UNIQUE DROP LOGIC
-            // if (roll > 0.95 / rarityBoost) rarity = 'unique'; 
-            if (roll > 0.85 / rarityBoost) rarity = 'rare';
-            else if (roll > 0.6 / rarityBoost) rarity = 'magic';
-
-            const iLvl = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1;
-            const item = generateItem('random', iLvl, rarity);
-
-            loot.active = true;
-            loot.x = x;
-            loot.y = y;
-            loot.lifeTime = 60; 
-            loot.itemData = item;
-            loot.rarity = rarity;
-            loot.autoCollectRadius = 50; 
-        }
-    }
-  
-    private spawnFloatingText(x: number, y: number, text: string, color: string = 'white', scale: number = 1.0) {
-        const textObj = this.floatingTexts.find(t => !t.active);
-        if (textObj) {
-            textObj.active = true;
-            textObj.x = x + Math.random() * 20 - 10;
-            textObj.y = y;
-            textObj.text = text;
-            textObj.lifeTime = FLOATING_TEXT_LIFETIME;
-            textObj.velocityY = FLOATING_TEXT_SPEED;
-            textObj.color = color;
-            textObj.scale = scale;
-        }
-    }
-  
-    private triggerShake(duration: number = 0.3) {
-        this.gameState.shakeTimer = duration;
-    }
-
-    private spawnEnemy(type: EnemyType) {
-        if (!this.canvas) return;
-        const enemy = this.enemies.find(e => !e.active);
-        if (!enemy) return; 
-    
-        const canvasWidth = this.canvas.width;
-        const canvasHeight = this.canvas.height;
-
-        const angle = Math.random() * Math.PI * 2;
-        const viewportRadius = Math.sqrt(Math.pow(canvasWidth / CAMERA_ZOOM / 2, 2) + Math.pow(canvasHeight / CAMERA_ZOOM / 2, 2));
-        const radius = viewportRadius + 100;
-        
-        const stats = ENEMY_STATS[type];
-        const mapStats = this.gameState.currentMapStats;
-    
-        const isElite = Math.random() < 0.05 && type !== 'boss'; 
-        enemy.active = true;
-        enemy.type = type;
-        enemy.isElite = isElite;
-        enemy.knockbackVelocity = { x: 0, y: 0 };
-        
-        const hpMult = isElite ? 2.0 : 1.0;
-        const sizeMult = isElite ? 1.2 : 1.0;
-        
-        enemy.width = stats.size * sizeMult;
-        enemy.height = stats.size * sizeMult;
-        
-        enemy.hp = stats.hp * mapStats.monsterHealthMult * hpMult;
-        enemy.maxHp = enemy.hp;
-        enemy.speed = stats.speed;
-        
-        // Modifiers Logic
-        enemy.modifiers = [];
-        enemy.resistances = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
-        enemy.statuses = {}; // Reset statuses
-
-        // Reset timers
-        enemy.trailTimer = 0;
-        enemy.blastTimer = 0;
-
-        if (isElite || (type === 'boss') || this.gameState.currentFloor >= 3) {
-            // Chance to add random modifiers
-            const modCount = type === 'boss' ? 3 : isElite ? 2 : 1;
-            
-            for(let i=0; i<modCount; i++) {
-                if (Math.random() < 0.7) {
-                    const mod = ENEMY_MODIFIERS[Math.floor(Math.random() * ENEMY_MODIFIERS.length)];
-                    if (!enemy.modifiers.includes(mod)) {
-                        enemy.modifiers.push(mod);
-                        
-                        // Apply Stat changes immediately
-                        if (mod === 'fire_res') enemy.resistances.fire = 0.5;
-                        if (mod === 'cold_res') enemy.resistances.cold = 0.5;
-                        if (mod === 'lightning_res') enemy.resistances.lightning = 0.5;
-                        if (mod === 'chaos_res') enemy.resistances.chaos = 0.5;
-
-                        // Temporal Bubble spawn logic
-                        if (mod === 'temporal') {
-                            this.gameState.groundEffects.push({
-                                id: uuid(),
-                                x: enemy.x + enemy.width/2,
-                                y: enemy.y + enemy.height/2,
-                                radius: 250,
-                                type: 'bubble',
-                                duration: 99999, // Permanent until death
-                                sourceId: enemy.id
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        
-        enemy.x = this.gameState.playerWorldPos.x + Math.cos(angle) * radius;
-        enemy.y = this.gameState.playerWorldPos.y + Math.sin(angle) * radius;
-    
-        if (type === 'boss') {
-            // Increased Attack Delay: Boss 2.0 -> 2.4
-            enemy.attackTimer = 2.4;
-            this.callbacks.onNotification("BOSS SPAWNED!");
-        } else {
-            // Ensure non-bosses don't have an attack timer
-            enemy.attackTimer = undefined;
-        }
-    }
-
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0) {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0, behavior: 'normal' | 'orbit' = 'normal') {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -1320,6 +530,16 @@ export class GameEngine {
         bullet.damage = damage;
         bullet.pierce = pierce;
         bullet.ailmentChance = ailmentChance;
+        
+        // Orbit Logic
+        bullet.behavior = behavior;
+        if (behavior === 'orbit') {
+            bullet.orbitAngle = angle;
+            bullet.orbitRadius = 120; // Fixed orbit radius
+            bullet.initialSpeed = speed; // Use projectile speed to determine angular speed
+            bullet.vx = 0; // Override velocity
+            bullet.vy = 0;
+        }
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1505,9 +725,20 @@ export class GameEngine {
             const startAngle = baseAngle - ((safeCount - 1) * spreadRad) / 2;
             const size = skill.definition.id === 'electro_sphere' ? 30 : 15;
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
+            
+            const isOrbit = skill.stats.orbit > 0;
 
             for (let i = 0; i < safeCount; i++) {
-                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance);
+                let angle = 0;
+                if (isOrbit) {
+                    // 360 degree uniform distribution for orbit
+                    angle = baseAngle + (Math.PI * 2 * i) / safeCount;
+                } else {
+                    // Standard spread
+                    angle = (safeCount > 1 ? startAngle + i * spreadRad : baseAngle);
+                }
+                
+                this.spawnBullet(px, py, angle, 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance, isOrbit ? 'orbit' : 'normal');
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -2323,9 +1554,28 @@ export class GameEngine {
 
         for (const b of this.bullets) {
             if (!b.active) continue;
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
-            b.lifeTime -= dt;
+            
+            // --- ORBIT LOGIC ---
+            if (b.behavior === 'orbit' && b.owner === 'player') {
+                // Angular Speed = Linear Speed / Radius
+                const angularSpeed = (b.initialSpeed || 200) / (b.orbitRadius || 120);
+                b.orbitAngle = (b.orbitAngle || 0) + angularSpeed * dt;
+                
+                const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
+                const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
+                
+                // Force Position
+                b.x = px + Math.cos(b.orbitAngle) * (b.orbitRadius || 120) - b.width/2;
+                b.y = py + Math.sin(b.orbitAngle) * (b.orbitRadius || 120) - b.height/2;
+                
+                b.lifeTime -= dt; 
+            } else {
+                // Standard Linear Movement
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.lifeTime -= dt;
+            }
+
             if (b.lifeTime <= 0) { b.active = false; continue; }
 
             // --- FIREBALL TRAIL PARTICLES ---
@@ -2475,6 +1725,795 @@ export class GameEngine {
             this.enterNextFloor();
         } else if (int.type === 'portal_return') {
             this.finalizeRun();
+        }
+    }
+
+    // --- MAP SYSTEM & EXPEDITION LOOP ---
+    
+    public activateMap(mapItem: ItemInstance) {
+        if (mapItem.type !== 'map') return;
+        
+        // Remove map from bag (Simple consumption logic)
+        const idx = this.gameState.backpack.findIndex(i => i.id === mapItem.id);
+        if (idx > -1) {
+             // If stack logic exists later
+             if (mapItem.stackSize && mapItem.stackSize > 1) {
+                 mapItem.stackSize--;
+             } else {
+                 this.gameState.backpack.splice(idx, 1);
+             }
+        }
+        this.callbacks.onInventoryChange();
+
+        // --- Endless Mode Check ---
+        if (mapItem.gemDefinitionId === 'map_endless_void') {
+            this.gameState.isEndlessMode = true;
+            this.gameState.currentFloor = 1;
+            
+            // Endless Mode Initial State: No bonuses, pure baseline
+            this.gameState.currentMapStats = {
+                tier: 1,
+                monsterHealthMult: 1.0,
+                monsterDamageMult: 1.0,
+                packSizeMult: 1.0,
+                xpMult: 1.0,
+                rarityMult: 1.0
+            };
+            
+            this.gameState.targetKills = 50; // Floor 1 target
+            this.callbacks.onNotification("⚔️ ENDLESS MODE STARTED ⚔️");
+
+        } else {
+            // --- Normal Map Logic ---
+            this.gameState.isEndlessMode = false;
+
+            const mapStats: MapStats = {
+                tier: mapItem.level,
+                monsterHealthMult: 1 + (mapItem.level * 0.1), 
+                monsterDamageMult: 1 + (mapItem.level * 0.1),
+                packSizeMult: 1,
+                xpMult: 1 + (mapItem.level * 0.05),
+                rarityMult: 1
+            };
+
+            for (const affix of mapItem.affixes) {
+                const val = affix.value;
+                switch(affix.stat) {
+                    case 'monsterHealth': mapStats.monsterHealthMult += val; mapStats.xpMult += val * 0.5; break;
+                    case 'monsterDamage': mapStats.monsterDamageMult += val; mapStats.xpMult += val * 0.5; break;
+                    case 'monsterPackSize': mapStats.packSizeMult += val; break;
+                    case 'xpGain': mapStats.xpMult += val; break;
+                    case 'itemRarity': mapStats.rarityMult += val; break;
+                }
+            }
+
+            // Rarity Bonuses
+            if (mapItem.rarity === 'magic') { mapStats.rarityMult += 0.2; mapStats.packSizeMult += 0.1; }
+            if (mapItem.rarity === 'rare') { mapStats.rarityMult += 0.5; mapStats.packSizeMult += 0.2; }
+            if (mapItem.rarity === 'unique') { mapStats.rarityMult += 1.0; mapStats.xpMult += 0.5; }
+
+            this.gameState.currentMapStats = mapStats;
+            this.gameState.currentFloor = 1;
+            this.gameState.targetKills = 50 + (1 * 50) + (mapStats.tier * 30); 
+            
+            this.callbacks.onNotification(`Expedition Started: Floor 1`);
+        }
+
+        // --- Common Initialization ---
+        this.gameState.worldState = 'RUN';
+        this.gameState.expeditionActive = true;
+        this.gameState.currentKills = 0;
+        this.gameState.playerWorldPos = { x: 0, y: 0 };
+        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
+        
+        // Clear Entities
+        this.enemies.forEach(e => e.active = false);
+        this.bullets.forEach(b => b.active = false);
+        this.loot.forEach(l => l.active = false);
+        this.xpOrbs.forEach(o => o.active = false);
+        this.gameState.groundEffects = [];
+        this.gameState.interactables = [];
+        this.gameState.npcs = []; 
+        this.gameState.particles = [];
+
+        this.saveGame();
+        this.updateHud();
+    }
+
+    public activateFreeRun() {
+        const freeMap = generateItem('map', 1, 'normal');
+        this.activateMap(freeMap);
+    }
+
+    private enterNextFloor() {
+        this.gameState.currentFloor += 1;
+        this.gameState.currentKills = 0;
+        this.gameState.playerWorldPos = { x: 0, y: 0 };
+        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
+
+        // Clear Entities
+        this.enemies.forEach(e => e.active = false);
+        this.bullets.forEach(b => b.active = false);
+        this.loot.forEach(l => l.active = false); 
+        this.xpOrbs.forEach(o => o.active = false);
+        this.gameState.groundEffects = [];
+        this.gameState.interactables = [];
+        this.gameState.particles = [];
+
+        if (this.gameState.isEndlessMode) {
+            // --- Endless Mode Logic ---
+            const floor = this.gameState.currentFloor;
+            
+            // Infinite Scaling (Additive to preserve previous stacks)
+            this.gameState.currentMapStats.monsterHealthMult += 0.1;
+            this.gameState.currentMapStats.monsterDamageMult += 0.05;
+            this.gameState.currentMapStats.xpMult += 0.05;
+
+            // Environmental Deterioration (Every 5 floors)
+            if (floor % 5 === 0) {
+                 const mapAffixes = AFFIX_DATABASE.filter(a => a.validSlots.includes('map'));
+                 if (mapAffixes.length > 0) {
+                     const affix = mapAffixes[Math.floor(Math.random() * mapAffixes.length)];
+                     // Roll value between min and max
+                     const val = affix.minVal + Math.random() * (affix.maxVal - affix.minVal);
+                     
+                     switch(affix.stat) {
+                        case 'monsterHealth': 
+                            this.gameState.currentMapStats.monsterHealthMult += val; 
+                            // Map mods usually give XP/Quant too
+                            this.gameState.currentMapStats.xpMult += val * 0.5; 
+                            break;
+                        case 'monsterDamage': 
+                            this.gameState.currentMapStats.monsterDamageMult += val; 
+                            this.gameState.currentMapStats.xpMult += val * 0.5; 
+                            break;
+                        case 'monsterPackSize': 
+                            this.gameState.currentMapStats.packSizeMult += val; 
+                            break;
+                        case 'xpGain': 
+                            this.gameState.currentMapStats.xpMult += val; 
+                            break;
+                        case 'itemRarity': 
+                            this.gameState.currentMapStats.rarityMult += val; 
+                            break;
+                     }
+                     
+                     this.callbacks.onNotification("环境恶化：" + affix.name + " (T" + floor + ")");
+                 }
+            }
+
+            // Increase Kill Target
+            this.gameState.targetKills = 50 + (floor * 10);
+
+            this.callbacks.onNotification(`Endless Floor ${floor} (HP x${this.gameState.currentMapStats.monsterHealthMult.toFixed(1)})`);
+        } else {
+            // --- Normal Mode Logic ---
+            this.gameState.currentMapStats.monsterHealthMult *= 1.1; 
+            this.gameState.currentMapStats.monsterDamageMult *= 1.1;
+            
+            // Floor 5 is Boss Floor
+            if (this.gameState.currentFloor === 5) {
+                 this.gameState.targetKills = 1; 
+                 this.spawnEnemy('boss');
+                 this.directorState.bossSpawned = true;
+                 this.callbacks.onNotification(`FLOOR 5: BOSS ENCOUNTER`);
+            } else {
+                 this.gameState.targetKills = 50 + (this.gameState.currentFloor * 50) + (this.gameState.currentMapStats.tier * 30);
+                 this.callbacks.onNotification(`Descended to Floor ${this.gameState.currentFloor}`);
+            }
+        }
+
+        this.saveGame();
+        this.updateHud();
+    }
+
+    private finalizeRun() {
+        this.gameState.worldState = 'HIDEOUT';
+        this.gameState.playerWorldPos = { x: 0, y: 0 };
+        this.currentHp = this.playerStats.getStatValue('maxHp');
+        this.enemies.forEach(e => e.active = false);
+        this.bullets.forEach(b => b.active = false);
+        this.loot.forEach(l => l.active = false);
+        this.xpOrbs.forEach(o => o.active = false);
+        this.gameState.groundEffects = [];
+        this.gameState.particles = [];
+        this.gameState.expeditionActive = false;
+        this.gameState.currentFloor = 0;
+        
+        // ROGUELIKE RESET
+        this.gameState.activeSkills = [
+            createEmptySkillSlot(0), createEmptySkillSlot(1),
+            createEmptySkillSlot(2), createEmptySkillSlot(3)
+        ];
+        this.gameState.gemInventory = [];
+        this.gameState.level = 1;
+        this.gameState.xp = 0;
+        this.gameState.nextLevelXp = BASE_XP_TO_LEVEL;
+        this.chosenUpgrades = [];
+        this.recalculateStats();
+        this.currentHp = this.playerStats.getStatValue('maxHp'); 
+
+        // Setup Hideout
+        const mapDevice: Interactable = {
+            id: 999,
+            active: true,
+            type: 'map_device',
+            x: 0,
+            y: -200,
+            width: 80,
+            height: 80,
+            color: '#c026d3',
+            interactionRadius: 100,
+            label: 'Map Device'
+        };
+        const merchant: NPC = {
+            id: 888,
+            active: true,
+            type: 'merchant',
+            name: "Merchant",
+            x: 100,
+            y: -50,
+            width: 50,
+            height: 50,
+            color: '#22c55e',
+            interactionRadius: 80
+        };
+        this.gameState.interactables = [mapDevice];
+        this.gameState.npcs = [merchant];
+
+        this.callbacks.onNotification("Run Complete - Character Reset");
+        this.saveGame();
+        this.updateHud();
+        this.callbacks.onInventoryChange();
+    }
+    
+    public returnToHideout() {
+        this.finalizeRun();
+    }
+
+    // --- ITEM & STAT SYSTEM ---
+
+    public sellBatch(mode: 'normal' | 'magic' | 'rare' | 'all_junk') {
+        const backpack = this.gameState.backpack;
+        let itemsToSell: ItemInstance[] = [];
+
+        if (mode === 'all_junk') {
+            itemsToSell = backpack.filter(i => (i.rarity === 'normal' || i.rarity === 'magic') && i.type === 'equipment');
+        } else {
+            itemsToSell = backpack.filter(i => i.rarity === mode && i.type === 'equipment');
+        }
+
+        if (itemsToSell.length === 0) {
+            this.callbacks.onNotification("No matching equipment to sell.");
+            return;
+        }
+
+        let totalValue = 0;
+        const PRICES: Record<string, number> = { normal: 5, magic: 10, rare: 20, unique: 50 };
+
+        itemsToSell.forEach(item => {
+            totalValue += PRICES[item.rarity] || 1;
+        });
+
+        // Remove sold items
+        this.gameState.backpack = this.gameState.backpack.filter(i => !itemsToSell.includes(i));
+        this.gameState.gold += totalValue;
+
+        this.callbacks.onNotification(`Sold ${itemsToSell.length} items for ${totalValue} Gold`);
+        this.callbacks.onInventoryChange();
+        this.updateHud();
+        this.saveGame();
+    }
+
+    public sellSingleItem(item: ItemInstance) {
+        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
+        if (backpackIndex === -1) return;
+
+        let price = 0;
+        switch (item.rarity) {
+            case 'normal': price = 5; break;
+            case 'magic': price = 10; break;
+            case 'rare': price = 20; break;
+            case 'unique': price = 100; break;
+        }
+
+        this.gameState.backpack.splice(backpackIndex, 1);
+        this.gameState.gold += price;
+
+        this.callbacks.onNotification(`Sold ${item.name} for ${price} Gold`);
+        this.callbacks.onInventoryChange();
+        this.updateHud();
+        this.saveGame();
+    }
+
+    private recalculateStats() {
+        this.playerStats.reset();
+        
+        const level = this.gameState.level;
+
+        this.playerStats.setBase('moveSpeed', 3.0);
+        this.playerStats.setBase('attackSpeed', 1.0);
+        
+        // Base Damage = 10 + (Current Level * 2)
+        this.playerStats.setBase('bulletDamage', 10 + (level * 2));
+        
+        this.playerStats.setBase('projectileCount', 1);
+        this.playerStats.setBase('projectileSpread', 15);
+        
+        // Base HP = 100 + (Current Level * 10)
+        this.playerStats.setBase('maxHp', 100 + (level * 10));
+        
+        this.playerStats.setBase('hpRegen', 0);
+        this.playerStats.setBase('critChance', 0.05);
+        this.playerStats.setBase('critMultiplier', 1.5);
+        this.playerStats.setBase('defense', 0);
+        // Base Ailment Chance = 15%
+        this.playerStats.setBase('ailmentChance', 0.15);
+  
+        for (const upg of this.chosenUpgrades) {
+            if (upg.stat && upg.type && upg.value) {
+                this.playerStats.addModifier(upg.stat, upg.type, upg.value, upg.tags);
+            }
+        }
+  
+        const equipment = this.gameState.equipment;
+        Object.keys(equipment).forEach((key) => {
+            const slot = key as ItemSlot;
+            const item = equipment[slot];
+            if (!item) return;
+  
+            for (const affix of item.affixes) {
+                if (['monsterHealth', 'monsterDamage', 'monsterPackSize'].includes(affix.stat)) continue;
+                this.playerStats.addModifier(affix.stat as StatKey, affix.valueType, affix.value, affix.tags);
+            }
+        });
+
+        // --- HP SYNC FIX ---
+        const finalMaxHp = this.playerStats.getStatValue('maxHp');
+        // Cap current health to new max health to prevent overflow
+        if (this.currentHp > finalMaxHp) {
+            this.currentHp = finalMaxHp;
+        }
+
+        // Notify UI immediately to update stats panel and HUD
+        this.updateHud(); 
+        this.callbacks.onInventoryChange();
+    }
+
+    public equipItem(item: ItemInstance) {
+        if (item.type === 'gem' || item.type === 'map') return; 
+
+        // Smart Ring Logic: Auto-target empty slot or default to ring1
+        if (item.slot === 'ring1' || item.slot === 'ring2') {
+             if (!this.gameState.equipment.ring1) {
+                 item.slot = 'ring1';
+             } else if (!this.gameState.equipment.ring2) {
+                 item.slot = 'ring2';
+             } else {
+                 item.slot = 'ring1'; // Default replace ring1
+             }
+        }
+
+        const currentEquipped = this.gameState.equipment[item.slot as ItemSlot];
+        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
+        if (backpackIndex > -1) {
+            this.gameState.backpack.splice(backpackIndex, 1);
+        }
+        if (currentEquipped) {
+            this.gameState.backpack.push(currentEquipped);
+        }
+        this.gameState.equipment[item.slot as ItemSlot] = item;
+        this.recalculateStats(); 
+        this.saveGame();
+        // onInventoryChange called inside recalculateStats now, but safe to call again or remove
+        // Leaving it here ensures flow is clear
+    }
+
+    public unequipItem(slot: ItemSlot) {
+        if (slot === 'gem' as any) return; 
+        const item = this.gameState.equipment[slot];
+        if (!item) return;
+        if (this.gameState.backpack.length >= BACKPACK_CAPACITY) {
+            this.callbacks.onNotification("Backpack Full!");
+            return;
+        }
+        this.gameState.backpack.push(item);
+        this.gameState.equipment[slot] = null;
+        this.recalculateStats(); 
+        this.saveGame();
+    }
+
+    // --- GEM MANAGEMENT ---
+
+    public equipGem(gemItem: ItemInstance, skillIndex: number, isSupport: boolean, subSlotIndex: number = -1) {
+        const activeSkill = this.gameState.activeSkills[skillIndex];
+        if (!activeSkill) return;
+
+        const gemDef = SKILL_DATABASE[gemItem.gemDefinitionId || ''];
+        if (!gemDef) return;
+
+        if (isSupport) {
+            if (gemDef.type !== 'support') {
+                this.callbacks.onNotification("Must be Support Gem!");
+                return;
+            }
+            if (!activeSkill.activeGem) {
+                this.callbacks.onNotification("Active Skill Required!");
+                return;
+            }
+            if (!SkillManager.checkCompatibility(activeSkill.activeGem.gemDefinitionId!, gemItem.gemDefinitionId!)) {
+                this.callbacks.onNotification("Incompatible Gem Tags!");
+                return;
+            }
+        } else {
+            if (gemDef.type !== 'active') {
+                this.callbacks.onNotification("Must be Active Gem!");
+                return;
+            }
+        }
+
+        let targetSubSlot = subSlotIndex;
+        if (isSupport && targetSubSlot === -1) {
+            targetSubSlot = activeSkill.supportGems.findIndex(g => g === null);
+            if (targetSubSlot === -1) targetSubSlot = 0; 
+        }
+
+        if (isSupport && gemItem.gemDefinitionId) {
+             const isDuplicate = activeSkill.supportGems.some((existingGem, idx) => {
+                 if (idx === targetSubSlot) return false;
+                 if (!existingGem) return false;
+                 return existingGem.gemDefinitionId === gemItem.gemDefinitionId;
+             });
+
+             if (isDuplicate) {
+                 this.callbacks.onNotification("Cannot stack identical Support Gems.");
+                 return;
+             }
+        }
+
+        const invIndex = this.gameState.gemInventory.findIndex(i => i.id === gemItem.id);
+        if (invIndex > -1) this.gameState.gemInventory.splice(invIndex, 1);
+
+        let existingItem: ItemInstance | null = null;
+        if (isSupport) {
+            existingItem = activeSkill.supportGems[targetSubSlot];
+            activeSkill.supportGems[targetSubSlot] = gemItem;
+        } else {
+            existingItem = activeSkill.activeGem;
+            activeSkill.activeGem = gemItem;
+            activeSkill.cooldownTimer = 0; 
+        }
+
+        if (existingItem) {
+            this.gameState.gemInventory.push(existingItem);
+        }
+        
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public unequipGem(skillIndex: number, isSupport: boolean, subSlotIndex: number) {
+        const activeSkill = this.gameState.activeSkills[skillIndex];
+        if (!activeSkill) return;
+
+        let itemToUnequip: ItemInstance | null = null;
+        if (isSupport) {
+            itemToUnequip = activeSkill.supportGems[subSlotIndex];
+            activeSkill.supportGems[subSlotIndex] = null;
+        } else {
+            itemToUnequip = activeSkill.activeGem;
+            activeSkill.activeGem = null;
+        }
+
+        if (itemToUnequip) {
+            this.gameState.gemInventory.push(itemToUnequip);
+        }
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public equipSupportToSkill(skillIndex: number) {
+        if (!this.gameState.pendingSupportGem) return;
+        
+        const skill = this.gameState.activeSkills[skillIndex];
+        const gem = this.gameState.pendingSupportGem;
+        
+        let emptySlot = skill.supportGems.findIndex(g => g === null);
+        if (emptySlot === -1) emptySlot = 0; 
+
+        const isDuplicate = skill.supportGems.some((existingGem, idx) => {
+             if (idx === emptySlot && skill.supportGems[idx] === null) return false; 
+             if (idx === emptySlot) return false; 
+             if (!existingGem) return false;
+             return existingGem.gemDefinitionId === gem.gemDefinitionId;
+        });
+
+        if (isDuplicate) {
+             this.callbacks.onNotification("Cannot stack identical Support Gems.");
+             return;
+        }
+
+        skill.supportGems[emptySlot] = gem;
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        this.gameState.isPaused = false;
+        this.gameState.lastFrameTime = performance.now();
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public stashPendingSupportGem() {
+        if (!this.gameState.pendingSupportGem) return;
+        this.gameState.gemInventory.push(this.gameState.pendingSupportGem);
+        this.callbacks.onNotification("Gem moved to Pouch");
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        this.gameState.isPaused = false;
+        this.gameState.lastFrameTime = performance.now();
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public cancelSupportSelection() {
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        // Do not modify isPaused state, because the player is still in the level up screen
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public selectUpgrade(upgrade: UpgradeDefinition) {
+        if (upgrade.gemItem) {
+            const gemDef = SKILL_DATABASE[upgrade.gemItem.gemDefinitionId!];
+            if (gemDef.type === 'active') {
+                const emptyIndex = this.gameState.activeSkills.findIndex(s => s.activeGem === null);
+                if (emptyIndex !== -1) {
+                    this.gameState.activeSkills[emptyIndex].activeGem = upgrade.gemItem;
+                    this.gameState.activeSkills[emptyIndex].cooldownTimer = 0;
+                    this.callbacks.onNotification(`Learned ${gemDef.name}!`);
+                } else {
+                    this.gameState.gemInventory.push(upgrade.gemItem);
+                    this.callbacks.onNotification(`${gemDef.name} added to Bag`);
+                }
+            } else if (gemDef.type === 'support') {
+                const hasActiveSkill = this.gameState.activeSkills.some(s => s.activeGem !== null);
+                if (hasActiveSkill) {
+                    this.gameState.pendingSupportGem = upgrade.gemItem;
+                    this.gameState.isSelectingSupport = true;
+                    return; 
+                } else {
+                    this.gameState.gemInventory.push(upgrade.gemItem);
+                    this.callbacks.onNotification(`Stashed ${gemDef.name} (No Active Skills)`);
+                }
+            }
+        } else {
+            this.chosenUpgrades.push(upgrade);
+            if (upgrade.stat === 'maxHp' && upgrade.value) {
+                this.currentHp += upgrade.value; 
+            }
+            this.recalculateStats();
+        }
+
+        this.gameState.level += 1;
+        this.gameState.xp -= this.gameState.nextLevelXp;
+        // Steep XP Curve: 150 * (1.25 ^ (Level - 1))
+        this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
+        
+        this.gameState.isPaused = false;
+        this.gameState.lastFrameTime = performance.now();
+        
+        this.saveGame();
+        this.updateHud();
+    }
+
+    private triggerLevelUp() {
+        this.gameState.isPaused = true;
+        const ownedActiveGemIds: string[] = [];
+        
+        this.gameState.activeSkills.forEach(s => {
+            if (s.activeGem && s.activeGem.gemDefinitionId) {
+                ownedActiveGemIds.push(s.activeGem.gemDefinitionId);
+            }
+        });
+
+        this.gameState.gemInventory.forEach(item => {
+            if (item.gemDefinitionId) {
+                const def = SKILL_DATABASE[item.gemDefinitionId];
+                if (def && def.type === 'active') {
+                    ownedActiveGemIds.push(item.gemDefinitionId);
+                }
+            }
+        });
+
+        const options = generateRewards(this.gameState.level, ownedActiveGemIds);
+        this.callbacks.onLevelUp(options);
+    }
+
+    private gainXp(amount: number) {
+        // Level Gap Penalty Logic
+        let penaltyMultiplier = 1.0;
+        // Default Tier 1 if hideout or unknown
+        const mapTier = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1; 
+        const playerLevel = this.gameState.level;
+        
+        // If Player is significantly higher than map tier
+        if (playerLevel > mapTier + 3) {
+            // Severe Penalty: (MapTier / PlayerLevel) ^ 4
+            penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
+        }
+
+        // Apply Stats Multiplier (Wisdom, etc)
+        const xpMult = this.playerStats.getStatValue('xpGain');
+
+        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier * xpMult));
+        
+        this.gameState.xp += effectiveXp;
+        if (this.gameState.xp >= this.gameState.nextLevelXp) {
+            this.triggerLevelUp();
+        } else {
+            this.updateHud();
+        }
+    }
+
+    private spawnXPOrb(x: number, y: number, value: number) {
+        const orb = this.xpOrbs.find(o => !o.active);
+        if (orb) {
+            orb.active = true;
+            orb.x = x + (Math.random() - 0.5) * 20;
+            orb.y = y + (Math.random() - 0.5) * 20;
+            orb.value = value;
+            orb.magnetized = false;
+            
+            // Tier Logic
+            if (value >= 500) orb.tier = 'gold';
+            else if (value >= 150) orb.tier = 'pink';
+            else if (value >= 50) orb.tier = 'purple';
+            else orb.tier = 'blue';
+        }
+    }
+
+    // --- GAMEPLAY HELPERS ---
+
+    private checkCollision(rect1: Entity, rect2: Entity) {
+        return (rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y);
+    }
+
+    private spawnLoot(x: number, y: number, force = false, chanceOverride?: number) {
+        // Base probability calculation: 2% by default
+        let finalChance = chanceOverride ?? LOOT_CHANCE;
+        
+        if (this.gameState.worldState === 'RUN') {
+            // Scale chance by map rarity multiplier (Base 1 + bonuses)
+            finalChance *= this.gameState.currentMapStats.rarityMult; 
+        }
+
+        if (!force && Math.random() > finalChance) return;
+        
+        const loot = this.loot.find(l => !l.active);
+        if (loot) {
+            const roll = Math.random();
+            let rarity: ItemRarity = 'normal';
+            const rarityBoost = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.rarityMult : 1;
+            
+            // REMOVED UNIQUE DROP LOGIC
+            // if (roll > 0.95 / rarityBoost) rarity = 'unique'; 
+            if (roll > 0.85 / rarityBoost) rarity = 'rare';
+            else if (roll > 0.6 / rarityBoost) rarity = 'magic';
+
+            const iLvl = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1;
+            const item = generateItem('random', iLvl, rarity);
+
+            loot.active = true;
+            loot.x = x;
+            loot.y = y;
+            loot.lifeTime = 60; 
+            loot.itemData = item;
+            loot.rarity = rarity;
+            loot.autoCollectRadius = 50; 
+        }
+    }
+  
+    private spawnFloatingText(x: number, y: number, text: string, color: string = 'white', scale: number = 1.0) {
+        const textObj = this.floatingTexts.find(t => !t.active);
+        if (textObj) {
+            textObj.active = true;
+            textObj.x = x + Math.random() * 20 - 10;
+            textObj.y = y;
+            textObj.text = text;
+            textObj.lifeTime = FLOATING_TEXT_LIFETIME;
+            textObj.velocityY = FLOATING_TEXT_SPEED;
+            textObj.color = color;
+            textObj.scale = scale;
+        }
+    }
+  
+    private triggerShake(duration: number = 0.3) {
+        this.gameState.shakeTimer = duration;
+    }
+
+    private spawnEnemy(type: EnemyType) {
+        if (!this.canvas) return;
+        const enemy = this.enemies.find(e => !e.active);
+        if (!enemy) return; 
+    
+        const canvasWidth = this.canvas.width;
+        const canvasHeight = this.canvas.height;
+
+        const angle = Math.random() * Math.PI * 2;
+        const viewportRadius = Math.sqrt(Math.pow(canvasWidth / CAMERA_ZOOM / 2, 2) + Math.pow(canvasHeight / CAMERA_ZOOM / 2, 2));
+        const radius = viewportRadius + 100;
+        
+        const stats = ENEMY_STATS[type];
+        const mapStats = this.gameState.currentMapStats;
+    
+        const isElite = Math.random() < 0.05 && type !== 'boss'; 
+        enemy.active = true;
+        enemy.type = type;
+        enemy.isElite = isElite;
+        enemy.knockbackVelocity = { x: 0, y: 0 };
+        
+        const hpMult = isElite ? 2.0 : 1.0;
+        const sizeMult = isElite ? 1.2 : 1.0;
+        
+        enemy.width = stats.size * sizeMult;
+        enemy.height = stats.size * sizeMult;
+        
+        enemy.hp = stats.hp * mapStats.monsterHealthMult * hpMult;
+        enemy.maxHp = enemy.hp;
+        enemy.speed = stats.speed;
+        
+        // Modifiers Logic
+        enemy.modifiers = [];
+        enemy.resistances = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
+        enemy.statuses = {}; // Reset statuses
+
+        // Reset timers
+        enemy.trailTimer = 0;
+        enemy.blastTimer = 0;
+
+        if (isElite || (type === 'boss') || this.gameState.currentFloor >= 3) {
+            // Chance to add random modifiers
+            const modCount = type === 'boss' ? 3 : isElite ? 2 : 1;
+            
+            for(let i=0; i<modCount; i++) {
+                if (Math.random() < 0.7) {
+                    const mod = ENEMY_MODIFIERS[Math.floor(Math.random() * ENEMY_MODIFIERS.length)];
+                    if (!enemy.modifiers.includes(mod)) {
+                        enemy.modifiers.push(mod);
+                        
+                        // Apply Stat changes immediately
+                        if (mod === 'fire_res') enemy.resistances.fire = 0.5;
+                        if (mod === 'cold_res') enemy.resistances.cold = 0.5;
+                        if (mod === 'lightning_res') enemy.resistances.lightning = 0.5;
+                        if (mod === 'chaos_res') enemy.resistances.chaos = 0.5;
+
+                        // Temporal Bubble spawn logic
+                        if (mod === 'temporal') {
+                            this.gameState.groundEffects.push({
+                                id: uuid(),
+                                x: enemy.x + enemy.width/2,
+                                y: enemy.y + enemy.height/2,
+                                radius: 250,
+                                type: 'bubble',
+                                duration: 99999, // Permanent until death
+                                sourceId: enemy.id
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        enemy.x = this.gameState.playerWorldPos.x + Math.cos(angle) * radius;
+        enemy.y = this.gameState.playerWorldPos.y + Math.sin(angle) * radius;
+    
+        if (type === 'boss') {
+            // Increased Attack Delay: Boss 2.0 -> 2.4
+            enemy.attackTimer = 2.4;
+            this.callbacks.onNotification("BOSS SPAWNED!");
+        } else {
+            // Ensure non-bosses don't have an attack timer
+            enemy.attackTimer = undefined;
         }
     }
 
@@ -3467,6 +3506,27 @@ export class GameEngine {
                 ctx.closePath();
                 ctx.stroke();
 
+                ctx.restore();
+            } else if (b.owner === 'player' && b.damageType === 'cold') {
+                // --- ICE SHARD RENDER ---
+                const cx = b.x + b.width / 2;
+                const cy = b.y + b.height / 2;
+                
+                ctx.save();
+                ctx.fillStyle = '#e0f2fe'; // Sky-100
+                ctx.shadowColor = '#38bdf8'; // Sky-400
+                ctx.shadowBlur = 10;
+                
+                // Diamond Shape for Ice
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 10);
+                ctx.lineTo(cx + 8, cy);
+                ctx.lineTo(cx, cy + 10);
+                ctx.lineTo(cx - 8, cy);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
                 ctx.restore();
             } else {
                 const key = b.owner === 'enemy' ? 'bulletBoss' : 'bullet';

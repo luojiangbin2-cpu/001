@@ -3,6 +3,8 @@
 
 
 
+
+
 export const TRANSLATIONS = {
   en: {
     // UI Buttons
@@ -136,6 +138,8 @@ export const TRANSLATIONS = {
     skill_electro_sphere_desc: "Fires a slow moving lightning orb that pierces enemies and triggers electric pulses.",
     skill_flame_ring_name: "Flame Ring",
     skill_flame_ring_desc: "Knocks back nearby enemies with a burst of fire.",
+    skill_orbit_name: "Orbit Support",
+    skill_orbit_desc: "Projectiles orbit the caster.",
     skill_pierce_name: "Pierce Support",
     skill_pierce_desc: "Projectiles Pierce 2 additional Targets, 20% more Damage",
     skill_lmp_name: "Lesser Multiple Projectiles",
@@ -329,6 +333,8 @@ export const TRANSLATIONS = {
     skill_electro_sphere_desc: "发射缓慢穿透敌人的电球，接触敌人时触发范围电击。",
     skill_flame_ring_name: "抗拒火环",
     skill_flame_ring_desc: "释放火焰推开周围的敌人。",
+    skill_orbit_name: "星轨辅助",
+    skill_orbit_desc: "投射物将环绕施法者旋转。",
     skill_pierce_name: "穿透",
     skill_pierce_desc: "投射物额外穿透 2 个目标，伤害总增 20%",
     skill_lmp_name: "低阶多重投射",
