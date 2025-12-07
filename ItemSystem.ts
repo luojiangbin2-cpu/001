@@ -1,4 +1,3 @@
-
 import { ItemSlot, ItemRarity, ItemInstance, AffixDefinition, AffixType, ItemAffixInstance, UpgradeDefinition, SkillDefinition } from './types';
 import { SKILL_DATABASE } from './SkillSystem';
 
@@ -464,5 +463,6 @@ export const createEndlessKey = (): ItemInstance => {
         level: 1,
         affixes: [],
         stackSize: 1,
+        gemDefinitionId: 'map_endless_void' // Added stable identifier for logic checks
     };
 };

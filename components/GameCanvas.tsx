@@ -1,8 +1,16 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable } from '../types';
+import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, ItemRarity } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
 import { SKILL_DATABASE, SkillManager } from '../SkillSystem';
 import { t, Language } from '../locales';
+
+const StatRow: React.FC<{ label: string; value: string; color?: string }> = ({ label, value, color = "text-white" }) => (
+    <div className="flex justify-between items-center text-xs border-b border-zinc-800/50 pb-0.5">
+        <span className="text-zinc-500">{label}</span>
+        <span className={`font-mono font-bold ${color}`}>{value}</span>
+    </div>
+);
 
 export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,6 +34,7 @@ export const GameCanvas: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [language, setLanguage] = useState<Language>('zh');
   const [nearbyInteractable, setNearbyInteractable] = useState<Interactable | null>(null);
+  const [autoSort, setAutoSort] = useState(false);
 
   const [, setTick] = useState(0); 
   
@@ -352,6 +361,25 @@ export const GameCanvas: React.FC = () => {
       setTooltip(null);
   };
 
+  // --- SORTING UTILS ---
+  const getRarityWeight = (r: ItemRarity) => {
+      switch(r) {
+          case 'unique': return 4;
+          case 'rare': return 3;
+          case 'magic': return 2;
+          default: return 1;
+      }
+  };
+
+  const sortItems = (items: ItemInstance[]) => {
+      return [...items].sort((a, b) => {
+          const wA = getRarityWeight(a.rarity);
+          const wB = getRarityWeight(b.rarity);
+          if (wA !== wB) return wB - wA; // Descending rarity
+          return a.name.localeCompare(b.name); // Ascending name
+      });
+  };
+
   // --- SWIPE HANDLERS FOR BACKPACK ---
   const handleTouchStart = (e: React.TouchEvent) => {
       setTouchStart(e.targetTouches[0].clientX);
@@ -453,21 +481,28 @@ export const GameCanvas: React.FC = () => {
     );
   };
 
-  const renderGemSocket = (item: ItemInstance | null, isSupport: boolean, subIndex: number, isCompatible: boolean = true) => {
-      let borderColor = isSupport ? "border-zinc-600" : "border-amber-600";
-      let bgColor = "bg-black/80";
-      let size = isSupport ? "w-12 h-12" : "w-20 h-20";
+  const renderForgeSocket = (item: ItemInstance | null, isSupport: boolean, subIndex: number, isCompatible: boolean = true) => {
+      let borderColor = isSupport ? "border-zinc-700" : "border-cyan-500";
+      let bgColor = "bg-black/90";
+      let size = isSupport ? "w-16 h-16" : "w-24 h-24";
+      let shadow = "";
       
       if (item) {
           const def = SKILL_DATABASE[item.gemDefinitionId || ''];
           if (!isCompatible) {
-              borderColor = "border-red-600";
+              borderColor = "border-red-600 animate-pulse";
               bgColor = "bg-red-950/50";
+              shadow = "shadow-[0_0_20px_rgba(220,38,38,0.5)]";
           } else {
-              if (def?.tags.includes('fire')) { borderColor = "border-red-500"; bgColor = "bg-red-900/40"; }
-              else if (def?.tags.includes('movement')) { borderColor = "border-green-500"; bgColor = "bg-green-900/40"; }
-              else if (def?.tags.includes('area')) { borderColor = "border-blue-400"; bgColor = "bg-blue-900/40"; }
-              else { borderColor = isSupport ? "border-zinc-300" : "border-amber-400"; bgColor = "bg-zinc-800"; }
+              if (def?.tags.includes('fire')) { borderColor = "border-orange-500"; bgColor = "bg-orange-950/80"; shadow="shadow-[0_0_20px_rgba(249,115,22,0.4)]"; }
+              else if (def?.tags.includes('movement')) { borderColor = "border-emerald-500"; bgColor = "bg-emerald-950/80"; shadow="shadow-[0_0_20px_rgba(16,185,129,0.4)]"; }
+              else if (def?.tags.includes('area')) { borderColor = "border-blue-400"; bgColor = "bg-blue-950/80"; shadow="shadow-[0_0_20px_rgba(96,165,250,0.4)]"; }
+              else { borderColor = isSupport ? "border-violet-400" : "border-cyan-400"; bgColor = isSupport ? "bg-violet-950/80" : "bg-cyan-950/80"; shadow = isSupport ? "shadow-[0_0_15px_rgba(167,139,250,0.4)]" : "shadow-[0_0_30px_rgba(34,211,238,0.4)]"; }
+          }
+      } else {
+          // Empty state style
+          if (!isSupport) {
+               shadow = "shadow-[0_0_10px_rgba(34,211,238,0.1)]";
           }
       }
 
@@ -476,19 +511,21 @@ export const GameCanvas: React.FC = () => {
             onClick={() => item && handleSocketClick(isSupport, subIndex)}
             onMouseEnter={(e) => item && handleItemHover(e, item, !isCompatible)}
             onMouseLeave={handleItemLeave}
-            className={`${size} ${bgColor} border-2 ${borderColor} rounded-full flex items-center justify-center relative shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-all hover:scale-110 active:scale-95 z-10 cursor-pointer ${!isCompatible && item ? 'opacity-80' : ''}`}
+            className={`${size} ${bgColor} border-2 ${borderColor} rounded-full flex items-center justify-center relative transition-all active:scale-95 z-10 cursor-pointer ${shadow}
+                ${!item && isSupport ? 'border-dashed opacity-50' : ''}
+            `}
           >
              {item ? (
                  <>
-                     <span className={`text-white font-bold text-xs drop-shadow-md text-center leading-none px-1 ${!isCompatible ? 'line-through decoration-red-500' : ''}`}>
+                     <span className={`text-white font-serif font-bold ${isSupport ? 'text-sm' : 'text-xl'} drop-shadow-md text-center leading-none px-1 ${!isCompatible ? 'text-red-300' : ''}`}>
                          {getAbbreviation(item.name, item)}
                      </span>
                      {!isCompatible && (
-                         <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm">!</div>
+                         <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-lg border border-red-400">!</div>
                      )}
                  </>
              ) : (
-                 <span className="text-zinc-700 text-[9px] font-bold">{isSupport ? 'SUP' : 'ACT'}</span>
+                 <span className="text-zinc-600 text-[10px] font-bold tracking-widest">{isSupport ? 'SUP' : 'ACT'}</span>
              )}
           </div>
       );
@@ -513,11 +550,16 @@ export const GameCanvas: React.FC = () => {
   
   // Calculate Filtered Items for Display
   const backpackItems = engineRef.current ? engineRef.current.gameState.backpack : [];
-  const filteredBackpack = backpackItems.filter(item => {
+  let filteredBackpack = backpackItems.filter(item => {
       if (inventoryTab === 'equipment') return item.type === 'equipment'; // Strict filtering: only equipment
       if (inventoryTab === 'map') return item.type === 'map';
       return false;
   });
+
+  // Apply Sort to Backpack
+  if (autoSort) {
+      filteredBackpack = sortItems(filteredBackpack);
+  }
   
   const totalBackpackPages = Math.ceil(Math.max(1, filteredBackpack.length) / ITEMS_PER_PAGE);
 
@@ -853,53 +895,63 @@ export const GameCanvas: React.FC = () => {
             </div>
         )}
 
-        {/* SKILL UI MODAL */}
+        {/* SKILL UI MODAL - ARCANE FORGE REDESIGN */}
         {showSkills && engineRef.current && (
-             <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-0 sm:p-6 animate-in fade-in zoom-in-95 duration-200">
-                 <div className="w-full h-full sm:max-w-4xl sm:h-[90%] flex flex-col bg-zinc-950 border-0 sm:border border-zinc-700 sm:rounded-lg shadow-2xl overflow-hidden relative">
+             <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-0 sm:p-6 animate-in fade-in zoom-in-95 duration-200">
+                 <div className="w-full h-full sm:max-w-4xl sm:h-[95%] flex flex-col bg-slate-950/80 border-0 sm:border border-white/10 sm:rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.8)] overflow-hidden relative">
                     
                     {/* Header */}
-                    <div className="flex justify-between items-center p-3 bg-zinc-900 border-b border-zinc-800 shrink-0 h-12">
-                        <h2 className="text-lg text-cyan-600 font-serif tracking-widest pl-2">SKILL FORGE</h2>
-                        <button onClick={handleToggleSkills} className="text-zinc-400 hover:text-white px-4 h-full text-xl font-bold">✕</button>
+                    <div className="flex justify-between items-center p-4 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-b border-white/5 shrink-0 h-16">
+                        <h2 className="text-xl text-cyan-400 font-serif tracking-[0.2em] pl-2 drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]">ARCANE FORGE</h2>
+                        <button onClick={handleToggleSkills} className="text-zinc-500 hover:text-cyan-200 px-4 h-full text-2xl font-light transition-colors">✕</button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto flex flex-col">
+                    <div className="flex-1 overflow-y-auto flex flex-col bg-black/20">
                         
-                        {/* 0. Skill Slots Selector Bar */}
-                        <div className="flex justify-center gap-2 p-2 bg-zinc-900/50 border-b border-zinc-800">
+                        {/* 0. Slot Selector Tabs */}
+                        <div className="flex justify-center gap-1 p-3 border-b border-white/5 bg-black/20">
                             {Array.from({ length: MAX_SKILL_SLOTS }).map((_, i) => {
                                 const skill = engineRef.current!.gameState.activeSkills[i];
                                 const isSelected = selectedSlotIndex === i;
                                 const activeName = skill.activeGem ? getAbbreviation(skill.activeGem.name, skill.activeGem) : (i + 1).toString();
-                                const activeColor = skill.activeGem ? "text-cyan-400 border-cyan-700" : "text-zinc-600 border-zinc-700";
-                                const bg = isSelected ? "bg-zinc-800 ring-1 ring-cyan-500" : "bg-zinc-950";
-
+                                
                                 return (
                                     <button 
                                         key={i} 
                                         onClick={() => setSelectedSlotIndex(i)}
-                                        className={`w-12 h-12 rounded border ${activeColor} ${bg} flex items-center justify-center font-bold text-xs transition-all hover:bg-zinc-800 active:scale-95`}
+                                        className={`w-14 h-12 relative flex items-center justify-center font-bold text-sm transition-all duration-300 active:scale-95 group
+                                            ${isSelected 
+                                                ? 'text-cyan-200' 
+                                                : 'text-zinc-600 hover:text-zinc-400'}
+                                        `}
                                     >
-                                        {activeName}
+                                        <div className={`absolute inset-0 border border-white/10 transform skew-x-12 rounded-sm bg-slate-900 transition-all
+                                            ${isSelected ? 'bg-cyan-950/30 border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'opacity-50'}
+                                        `}></div>
+                                        <span className="relative z-10">{activeName}</span>
+                                        {isSelected && <div className="absolute bottom-0 left-1 right-1 h-[2px] bg-cyan-500 shadow-[0_0_8px_cyan]"></div>}
                                     </button>
                                 );
                             })}
                         </div>
 
-                        {/* 1. Skill Setup Visualization (Middle Forge) */}
-                        <div className="w-full bg-[#050a10] p-6 flex flex-col items-center justify-center border-b border-zinc-800 relative min-h-[250px]">
-                            
-                            {/* Connector Lines */}
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-1 bg-zinc-700/50 -z-0"></div>
-                            <div className="absolute top-1/2 left-1/2 w-1 h-24 bg-zinc-700/50 -translate-x-1/2 -z-0"></div>
+                        {/* 1. The Forge (Middle) */}
+                        <div className="w-full relative flex flex-col items-center justify-start pt-10 pb-8 min-h-[360px] overflow-hidden">
+                            {/* Forge Background Glow */}
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-900/10 rounded-full blur-3xl pointer-events-none"></div>
 
-                            {/* Main Active Socket for SELECTED SLOT */}
-                            <div className="flex items-center gap-12 z-10">
-                                {renderGemSocket(engineRef.current.gameState.activeSkills[selectedSlotIndex].activeGem, false, 0)}
+                            {/* Active Socket (Center Top) */}
+                            <div className="relative z-20 mb-16">
+                                {/* Halo Effect */}
+                                <div className="absolute -inset-4 rounded-full border border-cyan-500/20 animate-[spin_10s_linear_infinite] pointer-events-none"></div>
+                                <div className="absolute -inset-2 rounded-full border border-cyan-400/30 animate-[spin_6s_linear_infinite_reverse] pointer-events-none"></div>
                                 
-                                {/* Supports Container for SELECTED SLOT */}
-                                <div className="flex gap-4">
+                                {renderForgeSocket(engineRef.current.gameState.activeSkills[selectedSlotIndex].activeGem, false, 0)}
+                            </div>
+                            
+                            {/* Energy Conduits & Supports */}
+                            <div className="relative w-full max-w-sm px-6">
+                                <div className="flex justify-between items-start gap-4">
                                      {engineRef.current.gameState.activeSkills[selectedSlotIndex].supportGems.map((g, i) => {
                                          const activeGem = engineRef.current?.gameState.activeSkills[selectedSlotIndex].activeGem;
                                          let isCompatible = true;
@@ -909,88 +961,142 @@ export const GameCanvas: React.FC = () => {
                                             isCompatible = false;
                                          }
                                          
+                                         // Energy Line Calculation
+                                         const connectionActive = activeGem && g && isCompatible;
+                                         const lineColor = connectionActive ? 'from-cyan-400 via-cyan-500 to-transparent' : 'from-zinc-800 to-transparent';
+                                         const lineGlow = connectionActive ? 'shadow-[0_0_10px_cyan]' : '';
+
                                          return (
-                                             <div key={i} className="flex flex-col items-center">
-                                                {renderGemSocket(g, true, i, isCompatible)}
+                                             <div key={i} className="flex flex-col items-center flex-1 relative group">
+                                                {/* Energy Conduit Line */}
+                                                <div className={`absolute -top-16 left-1/2 -translate-x-1/2 w-[2px] h-16 bg-gradient-to-b ${lineColor} ${lineGlow} transition-all duration-500`}></div>
+                                                
+                                                {/* Socket */}
+                                                <div className="relative z-10 transition-transform duration-300 hover:scale-105">
+                                                    {renderForgeSocket(g, true, i, isCompatible)}
+                                                </div>
                                              </div>
                                          );
                                      })}
                                 </div>
                             </div>
-                            
-                            {/* Active Skill Info / Live Stats */}
+
+                            {/* Stats Data Card */}
                             {engineRef.current.gameState.activeSkills[selectedSlotIndex].activeGem ? (() => {
                                 const resolved = SkillManager.resolveSkill(engineRef.current!.gameState.activeSkills[selectedSlotIndex], engineRef.current!.playerStats);
                                 if (!resolved) return null;
                                 return (
-                                    <div className="mt-8 bg-zinc-900/80 border border-zinc-700 rounded p-3 text-xs font-mono w-full max-w-sm">
-                                        <div className="flex justify-between text-cyan-300 font-bold mb-1">
-                                            <span>{t(`skill_${resolved.definition.id}_name`, language)}</span>
-                                            <span>{t('lbl_dps', language)}: {Math.round(resolved.stats.damage * resolved.stats.attackRate)}</span>
+                                    <div className="mt-8 mx-6 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-xl p-4 w-full max-w-sm shadow-xl animate-in slide-in-from-bottom-4 fade-in">
+                                        <div className="flex justify-between items-end border-b border-white/5 pb-2 mb-3">
+                                            <span className="text-cyan-100 font-bold text-lg tracking-wide">{t(`skill_${resolved.definition.id}_name`, language)}</span>
+                                            <div className="flex flex-col items-end">
+                                                <span className="text-[10px] text-zinc-500 uppercase tracking-widest">{t('lbl_dps', language)}</span>
+                                                <span className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500 drop-shadow-sm">
+                                                    {Math.round(resolved.stats.damage * resolved.stats.attackRate)}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400">
-                                            <span>{t('lbl_dmg', language)}: {resolved.stats.damage.toFixed(1)}</span>
-                                            <span>{t('lbl_rate', language)}: {resolved.stats.attackRate.toFixed(2)}/s</span>
-                                            <span>{t('lbl_proj', language)}: {resolved.stats.projectileCount}</span>
-                                            <span>{t('lbl_area', language)}: {resolved.stats.areaOfEffect}</span>
-                                            {resolved.stats.ailmentChance > 0 && (
-                                                <span className="text-yellow-400">{t('stat_ailment', language)}: {(resolved.stats.ailmentChance * 100).toFixed(0)}%</span>
-                                            )}
-                                            <span className="col-span-2 text-[10px] text-zinc-500 mt-1">{t('lbl_tags', language)}: {resolved.tags.map(tag => t(`tag_${tag}`, language)).join(', ')}</span>
+                                        
+                                        <div className="flex flex-wrap gap-2 mb-3">
+                                            {resolved.tags.map(tag => (
+                                                <span key={tag} className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[10px] text-cyan-100/70 font-mono uppercase tracking-wider">
+                                                    {t(`tag_${tag}`, language)}
+                                                </span>
+                                            ))}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-400 font-mono">
+                                            <div className="flex justify-between"><span>{t('lbl_dmg', language)}</span> <span className="text-slate-200">{resolved.stats.damage.toFixed(1)}</span></div>
+                                            <div className="flex justify-between"><span>{t('lbl_rate', language)}</span> <span className="text-slate-200">{resolved.stats.attackRate.toFixed(2)}/s</span></div>
+                                            {resolved.stats.projectileCount > 0 && <div className="flex justify-between"><span>{t('lbl_proj', language)}</span> <span className="text-slate-200">{resolved.stats.projectileCount}</span></div>}
+                                            {resolved.stats.areaOfEffect > 0 && <div className="flex justify-between"><span>{t('lbl_area', language)}</span> <span className="text-slate-200">{resolved.stats.areaOfEffect}</span></div>}
+                                            {resolved.stats.ailmentChance > 0 && <div className="flex justify-between text-amber-200/80"><span>{t('stat_ailment', language)}</span> <span>{(resolved.stats.ailmentChance * 100).toFixed(0)}%</span></div>}
                                         </div>
                                     </div>
                                 );
                             })() : (
-                                <div className="mt-8 text-zinc-600 font-serif italic">Slot {selectedSlotIndex + 1}: Empty</div>
+                                <div className="mt-12 text-zinc-700 font-serif italic text-sm tracking-widest border border-zinc-800/50 px-6 py-2 rounded-full">
+                                    SLOT EMPTY
+                                </div>
                             )}
                         </div>
 
-                        {/* 2. Gem Inventory */}
-                        <div className="flex-1 bg-zinc-900 p-4">
-                            <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider mb-2">Gem Pouch</h3>
-                            <div className="grid grid-cols-5 gap-3">
-                                {engineRef.current.gameState.gemInventory.map((gem) => {
-                                    const def = SKILL_DATABASE[gem.gemDefinitionId || ''];
-                                    
-                                    // Compatibility Check Visualization against currently selected slot
-                                    let borderColor = "border-zinc-700";
-                                    let opacity = "opacity-100";
-                                    
-                                    const currentActiveGem = engineRef.current?.gameState.activeSkills[selectedSlotIndex].activeGem;
-                                    
-                                    if (def && def.type === 'support') {
-                                        if (currentActiveGem) {
-                                            const activeDef = SKILL_DATABASE[currentActiveGem.gemDefinitionId!];
-                                            const compatible = SkillManager.checkCompatibility(activeDef.id, def.id);
-                                            
-                                            if (compatible) {
-                                                borderColor = "border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]";
-                                            } else {
-                                                borderColor = "border-red-900";
-                                                opacity = "opacity-30 grayscale";
-                                            }
-                                        }
-                                    } else if (def && def.type === 'active') {
-                                        borderColor = "border-cyan-600";
+                        {/* 2. Gem Pouch (Bottom) */}
+                        <div className="flex-1 bg-black/40 border-t border-white/5 p-4 backdrop-blur-sm relative">
+                            {/* Grid Background Pattern */}
+                            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+                            
+                            <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-3 relative z-10 pl-1 flex items-center justify-between">
+                                <span>RUNE STORAGE</span>
+                                <button 
+                                    onClick={() => setAutoSort(!autoSort)}
+                                    className={`text-[9px] px-2 py-0.5 rounded border border-white/10 transition-colors ${autoSort ? 'bg-cyan-900 text-cyan-200 border-cyan-700' : 'bg-zinc-900 text-zinc-500'}`}
+                                >
+                                    AUTO-SORT: {autoSort ? 'ON' : 'OFF'}
+                                </button>
+                            </h3>
+                            
+                            <div className="grid grid-cols-5 gap-3 relative z-10 content-start pb-8">
+                                {(() => {
+                                    let gems = engineRef.current.gameState.gemInventory;
+                                    if (autoSort) {
+                                        gems = sortItems(gems);
                                     }
+                                    return gems.map((gem) => {
+                                        const def = SKILL_DATABASE[gem.gemDefinitionId || ''];
+                                        
+                                        // Compatibility Logic for Highlighting
+                                        let borderColor = "border-zinc-800";
+                                        let opacity = "opacity-70";
+                                        let shadow = "";
+                                        let bg = "bg-zinc-900";
+                                        
+                                        const currentActiveGem = engineRef.current?.gameState.activeSkills[selectedSlotIndex].activeGem;
+                                        
+                                        if (def && def.type === 'support') {
+                                            borderColor = "border-violet-900/50";
+                                            
+                                            if (currentActiveGem) {
+                                                const activeDef = SKILL_DATABASE[currentActiveGem.gemDefinitionId!];
+                                                const compatible = SkillManager.checkCompatibility(activeDef.id, def.id);
+                                                
+                                                if (compatible) {
+                                                    borderColor = "border-violet-500";
+                                                    shadow = "shadow-[0_0_10px_rgba(139,92,246,0.3)]";
+                                                    opacity = "opacity-100";
+                                                    bg = "bg-violet-950/30";
+                                                } else {
+                                                    opacity = "opacity-30 grayscale";
+                                                }
+                                            }
+                                        } else if (def && def.type === 'active') {
+                                            borderColor = "border-cyan-700";
+                                            opacity = "opacity-100";
+                                            shadow = "shadow-[0_0_5px_rgba(6,182,212,0.2)]";
+                                            bg = "bg-cyan-950/30";
+                                        }
 
-                                    return (
-                                        <div 
-                                            key={gem.id}
-                                            onClick={() => handleGemInventoryClick(gem)}
-                                            onMouseEnter={(e) => handleItemHover(e, gem)}
-                                            onMouseLeave={handleItemLeave}
-                                            className={`aspect-square bg-zinc-950 ${borderColor} ${opacity} border-2 rounded-lg flex items-center justify-center cursor-pointer relative hover:brightness-125 transition-all`}
-                                        >
-                                            <span className="text-xl">
-                                                {def?.tags.includes('fire') ? '🔥' : def?.tags.includes('movement') ? '🌪️' : def?.type === 'support' ? '⚪' : '💠'}
-                                            </span>
-                                            <span className="absolute bottom-1 right-1 text-[8px] font-bold text-zinc-400">
-                                                {gem.gemDefinitionId?.substring(0,3).toUpperCase()}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
+                                        return (
+                                            <div 
+                                                key={gem.id}
+                                                onClick={() => handleGemInventoryClick(gem)}
+                                                onMouseEnter={(e) => handleItemHover(e, gem)}
+                                                onMouseLeave={handleItemLeave}
+                                                className={`aspect-square ${bg} ${borderColor} ${opacity} ${shadow} border rounded-lg flex items-center justify-center cursor-pointer relative transition-all duration-200 active:scale-95 group overflow-hidden`}
+                                            >
+                                                {/* Inner Shine */}
+                                                <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                                
+                                                <span className="text-2xl drop-shadow-md relative z-10 transform group-hover:scale-110 transition-transform">
+                                                    {def?.tags.includes('fire') ? '🔥' : def?.tags.includes('movement') ? '🌪️' : def?.type === 'support' ? '⚪' : '💠'}
+                                                </span>
+                                                <span className="absolute bottom-0.5 right-1 text-[8px] font-bold text-zinc-500/80 tracking-tighter">
+                                                    {gem.gemDefinitionId?.substring(0,3).toUpperCase()}
+                                                </span>
+                                            </div>
+                                        );
+                                    })
+                                })()}
                             </div>
                         </div>
                     </div>
@@ -1064,7 +1170,7 @@ export const GameCanvas: React.FC = () => {
                         )}
 
                         {/* Inventory Tabs */}
-                        <div className="flex w-full border-b border-zinc-800 bg-zinc-900/80">
+                        <div className="flex w-full border-b border-zinc-800 bg-zinc-900/80 items-center">
                             <button 
                                 onClick={() => { setInventoryTab('equipment'); setBackpackPage(0); }}
                                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${inventoryTab === 'equipment' ? 'text-yellow-500 border-b-2 border-yellow-500 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300'}`}
@@ -1076,6 +1182,12 @@ export const GameCanvas: React.FC = () => {
                                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${inventoryTab === 'map' ? 'text-purple-500 border-b-2 border-purple-500 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300'}`}
                             >
                                 Maps
+                            </button>
+                            <button 
+                                onClick={() => setAutoSort(!autoSort)}
+                                className={`px-4 py-2 mr-2 text-[10px] font-bold uppercase rounded border border-white/10 transition-colors ${autoSort ? 'bg-cyan-900 text-cyan-200 border-cyan-700' : 'bg-zinc-800 text-zinc-500'}`}
+                            >
+                                SORT: {autoSort ? 'ON' : 'OFF'}
                             </button>
                         </div>
 
@@ -1270,60 +1382,51 @@ export const GameCanvas: React.FC = () => {
                 <div className="text-neutral-400 font-mono mb-8 border-t border-b border-neutral-800 py-2 px-8">
                     Survived to {hudState.waveName}
                 </div>
-                <button onClick={handleReset} className="px-8 py-3 bg-neutral-200 text-black font-serif font-bold tracking-widest hover:bg-white active:scale-95 transition-all">
-                    RESURRECT
+                <button 
+                    onClick={handleReset}
+                    className="px-8 py-3 bg-red-900/20 hover:bg-red-900/40 text-red-500 border border-red-800 rounded font-serif tracking-widest transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(220,38,38,0.2)]"
+                >
+                    TRY AGAIN
                 </button>
             </div>
         )}
-        
+
         {/* LEVEL UP */}
-        {upgradeState.show && !isSelectingSupport && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-                <div className="w-full max-w-sm p-6 flex flex-col items-center">
-                    <h2 className="text-3xl font-serif text-yellow-500 tracking-widest mb-8 text-shadow">LEVEL UP</h2>
-                    <div className="grid gap-4 w-full">
-                        {upgradeState.options.map((option, idx) => {
-                            // Translate Option Name and Desc
-                            let name = option.name;
-                            let desc = option.description;
+        {upgradeState.show && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 animate-in fade-in duration-200 p-4">
+                <h2 className="text-3xl font-serif text-yellow-500 mb-1 tracking-widest drop-shadow-md">LEVEL UP!</h2>
+                <p className="text-zinc-500 text-xs mb-6 uppercase tracking-widest">Choose a boon</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
+                    {upgradeState.options.map((option, i) => (
+                        <div 
+                            key={i}
+                            onClick={() => handleSelectUpgrade(option)}
+                            className={`
+                                relative overflow-hidden bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer 
+                                transition-all hover:-translate-y-1 hover:border-yellow-500 hover:shadow-[0_0_20px_rgba(234,179,8,0.2)] group
+                                flex flex-col items-center text-center gap-2 h-48 justify-center
+                            `}
+                        >
+                            {/* Rarity Glow */}
+                            <div className={`absolute top-0 left-0 w-full h-1 ${option.color || 'bg-white'}`}></div>
+                            
+                            {/* Icon / Visual */}
+                            <div className={`w-16 h-16 rounded-full ${option.color?.replace('bg-', 'bg-') || 'bg-zinc-800'} bg-opacity-20 flex items-center justify-center text-3xl mb-2 group-hover:scale-110 transition-transform`}>
+                                {option.gemItem ? (option.gemItem.type === 'gem' ? '💎' : '📜') : '✨'}
+                            </div>
 
-                            if (option.gemItem) {
-                                name = t(`skill_${option.gemItem.gemDefinitionId}_name`, language);
-                                desc = t(`skill_${option.gemItem.gemDefinitionId}_desc`, language);
-                            } else {
-                                // Stat upgrade
-                                if (option.name === 'Multi-Shot') { name = t('upg_multishot_name', language); desc = t('upg_multishot_desc', language); }
-                                if (option.name === 'Haste') { name = t('upg_haste_name', language); desc = t('upg_haste_desc', language); }
-                                if (option.name === 'Giant') { name = t('upg_giant_name', language); desc = t('upg_giant_desc', language); }
-                                if (option.name === 'Swift') { name = t('upg_swift_name', language); desc = t('upg_swift_desc', language); }
-                                if (option.name === 'Vitality') { name = t('upg_vitality_name', language); desc = t('upg_vitality_desc', language); }
-                                if (option.name === 'Precision') { name = t('upg_precision_name', language); desc = t('upg_precision_desc', language); }
-                                if (option.name === 'Iron Skin') { name = t('upg_iron_skin_name', language); desc = t('upg_iron_skin_desc', language); }
-                                if (option.name === 'Troll Blood') { name = t('upg_regen_name', language); desc = t('upg_regen_desc', language); }
-                            }
-
-                            return (
-                                <button key={idx} onClick={() => handleSelectUpgrade(option)} className={`relative overflow-hidden group w-full p-4 border border-white/10 bg-zinc-900 hover:bg-zinc-800 hover:border-yellow-500/50 active:scale-95 transition-all shadow-xl text-left flex flex-col gap-1`}>
-                                    <div className={`absolute top-0 left-0 w-1 h-full ${option.color}`}></div>
-                                    <span className="text-gray-200 font-serif font-bold text-lg uppercase tracking-wide ml-2">{name}</span>
-                                    <span className="text-gray-500 text-xs font-mono ml-2">{desc}</span>
-                                    {option.gemItem && (
-                                        <span className="text-cyan-400 text-[10px] font-bold ml-2">GEM CARD</span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
+                            <h3 className={`font-bold text-lg ${option.gemItem ? 'text-cyan-400' : 'text-zinc-200'}`}>
+                                {option.name}
+                            </h3>
+                            <p className="text-xs text-zinc-400 font-mono leading-tight px-4">
+                                {option.description}
+                            </p>
+                        </div>
+                    ))}
                 </div>
             </div>
         )}
     </div>
   );
 };
-
-const StatRow = ({ label, value, color = "text-gray-200" }: { label: string, value: string, color?: string }) => (
-    <div className="flex justify-between items-center border-b border-white/5 pb-1">
-        <span className="text-zinc-500">{label}</span>
-        <span className={`font-bold ${color}`}>{value}</span>
-    </div>
-);

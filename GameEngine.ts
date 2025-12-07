@@ -1,14 +1,12 @@
-
-
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect, MapStats } from './types';
-import { generateItem, generateRewards, createGemItem, createSpecificItem } from './ItemSystem';
+import { generateItem, generateRewards, createGemItem, createSpecificItem, AFFIX_DATABASE, createEndlessKey } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
 import { SkillManager, SKILL_DATABASE } from './SkillSystem';
 
 // --- ASSETS (SVG Data URIs) ---
 const ASSETS: { [key: string]: string } = {
   player: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0OCIgZmlsbD0iIzNiODJmNiIgc3Ryb2tlPSIjMjU2M2ViIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIyNSIgZmlsbD0iIzYwYTVmYSIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==`,
-  enemy: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIHJ4PSIyMCIgZmlsbD0iI2VmNDQ0NCIgc3Ryb2tlPSIjOTkxYjFiIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNMzAgNDAgTDUwIDYwIEw3MCA0MCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSI1IiBmaWxsPSJub25lIi8+CiAgPGNpcmNsZSBjeD0iMzUiIGN5PSI0MCIgcj0iNSIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSI2NSIgY3k9IjQwIiByPSI1IiBmaWxsPSJibGFjayIvPgo8L3N2Zz4=`,
+  enemy: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIHJ4PSIyMCIgZmlsbD0iI2VmNDQ0NCIgc3Ryb2tlPSIjOTkxYjFiIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNMzAgNDAgTDUwIDYwIEw3MCA0MCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSI1IiBmaWxsPSJub25lIi8+CiAgPGNpcmNsZSBjeD0iMzUiIGN5PSI0MCIgcj0iSIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSI2NSIgY3k9IjQwIiByPSI1IiBmaWxsPSJibGFjayIvPgo8L3N2Zz4=`,
   enemyFast: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cGF0aCBkPSJNIDUwIDUgTCA5NSA5NSBMIDUwIDc1IEwgNSA5NSBaIiBmaWxsPSIjMDZ1NmQ0IiBzdHJva2U9IiMxZTMhOGEiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iNDUiIHI9IjUiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPg==`,
   enemyTank: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iOTAiIGhlaWdodD0iOTAiIGZpbGw9IiMxNTgwM2QiIHN0cm9rZT0iIzE0NTMyZCIgc3Ryb2tlLXdpZHRoPSI4Ii8+CiAgPHJlY3QgeD0iMjAiIHk9IjIwIiB3aWR0aD0iNjAiIGhlaWdodD0iMTUiIGZpbGw9ImJsYWNrIiBvcGFjaXR5PSIwLjMiLz4KPC9zdmc+`,
   enemyBoss: `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cGF0aCBkPSJNIDUwIDUgQyAyMCA1IDIwIDQ1IDIwIDQ1IEwgMjAgNzAgQyAyMCA4NSAzNSA5NSA1MCA5NSBDIDY1IDk1IDgwIDg1IDgwIDcwIEwgODAgNDUgQyA4MCA0NSA4MCA1IDUwIDUgWiIgZmlsbD0iIzc5MzA5NCIgc3Ryb2tlPSIjNTgxYzhjIiBzdHJva2Utd2lkdGg9IjUiLz4KICA8Y2lyY2xlIGN4PSIzNSIgY3k9IjQwIiByPSI4IiBmaWxsPSIjZmZjMTA3Ii8+CiAgPGNpcmNsZSBjeD0iNjUiIGN5PSI0MCIgcj0iOCIgZmlsbD0iI2ZmYzEwNyIvPgogIDxwYXRoIGQ9Ik0gNDAgNzAgTCA1MCA2MCBMIDYwIDcwIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjMiIGZpbGw9Im5vbmUiLz4KPC9zdmc+`,
@@ -174,6 +172,13 @@ export class GameEngine {
             generateItem('map', 3, 'rare')
         ];
 
+        // Give 2 Endless Keys for testing
+        const endlessKey1 = createEndlessKey();
+        endlessKey1.id = uuid();
+        
+        const endlessKey2 = createEndlessKey();
+        endlessKey2.id = uuid();
+
         // Give Pyromancer's Ring for Debugging
         const debugRing = createSpecificItem('ring1', 'prefix_pyromancer');
 
@@ -216,7 +221,7 @@ export class GameEngine {
             level: 1,
             xp: 0,
             nextLevelXp: BASE_XP_TO_LEVEL,
-            backpack: [...starterMaps],
+            backpack: [...starterMaps, endlessKey1, endlessKey2],
             equipment: { 
                 helmet: null, amulet: null, weapon: null, offhand: null, 
                 body: null, gloves: null, ring1: debugRing, ring2: null, boots: null 
@@ -523,7 +528,7 @@ export class GameEngine {
         this.callbacks.onInventoryChange();
 
         // --- Endless Mode Check ---
-        if (mapItem.id === 'map_endless_void') {
+        if (mapItem.gemDefinitionId === 'map_endless_void') {
             this.gameState.isEndlessMode = true;
             this.gameState.currentFloor = 1;
             
@@ -621,11 +626,43 @@ export class GameEngine {
             // --- Endless Mode Logic ---
             const floor = this.gameState.currentFloor;
             
-            // Infinite Scaling
-            // HP +10% per floor, Damage +5% per floor
-            this.gameState.currentMapStats.monsterHealthMult = 1 + (floor * 0.1);
-            this.gameState.currentMapStats.monsterDamageMult = 1 + (floor * 0.05);
-            this.gameState.currentMapStats.xpMult = 1 + (floor * 0.05);
+            // Infinite Scaling (Additive to preserve previous stacks)
+            this.gameState.currentMapStats.monsterHealthMult += 0.1;
+            this.gameState.currentMapStats.monsterDamageMult += 0.05;
+            this.gameState.currentMapStats.xpMult += 0.05;
+
+            // Environmental Deterioration (Every 5 floors)
+            if (floor % 5 === 0) {
+                 const mapAffixes = AFFIX_DATABASE.filter(a => a.validSlots.includes('map'));
+                 if (mapAffixes.length > 0) {
+                     const affix = mapAffixes[Math.floor(Math.random() * mapAffixes.length)];
+                     // Roll value between min and max
+                     const val = affix.minVal + Math.random() * (affix.maxVal - affix.minVal);
+                     
+                     switch(affix.stat) {
+                        case 'monsterHealth': 
+                            this.gameState.currentMapStats.monsterHealthMult += val; 
+                            // Map mods usually give XP/Quant too
+                            this.gameState.currentMapStats.xpMult += val * 0.5; 
+                            break;
+                        case 'monsterDamage': 
+                            this.gameState.currentMapStats.monsterDamageMult += val; 
+                            this.gameState.currentMapStats.xpMult += val * 0.5; 
+                            break;
+                        case 'monsterPackSize': 
+                            this.gameState.currentMapStats.packSizeMult += val; 
+                            break;
+                        case 'xpGain': 
+                            this.gameState.currentMapStats.xpMult += val; 
+                            break;
+                        case 'itemRarity': 
+                            this.gameState.currentMapStats.rarityMult += val; 
+                            break;
+                     }
+                     
+                     this.callbacks.onNotification("环境恶化：" + affix.name + " (T" + floor + ")");
+                 }
+            }
 
             // Increase Kill Target
             this.gameState.targetKills = 50 + (floor * 10);
@@ -1584,7 +1621,10 @@ export class GameEngine {
 
             const isBoss = e.type === 'boss';
             
-            this.spawnLoot(e.x, e.y, isBoss, e.isElite ? ELITE_LOOT_CHANCE : LOOT_CHANCE);
+            // Only drop loot if NOT in endless mode
+            if (!this.gameState.isEndlessMode) {
+                this.spawnLoot(e.x, e.y, isBoss, e.isElite ? ELITE_LOOT_CHANCE : LOOT_CHANCE);
+            }
             this.gameState.score += (isBoss ? 1000 : 10);
             
             // Replaced Direct Gain with XP Orb Spawn
@@ -1649,6 +1689,25 @@ export class GameEngine {
                             });
                             this.callbacks.onNotification("Victory!");
                             
+                            // 掉落 2 张无尽模式门票
+                            for (let i = 0; i < 2; i++) {
+                                const keyItem = createEndlessKey();
+                                keyItem.id = uuid(); // 确保唯一ID，防止React列表报错
+                                
+                                // 手动生成战利品（因为 spawnLoot 只能生成随机物品）
+                                const loot = this.loot.find(l => !l.active);
+                                if (loot) {
+                                    loot.active = true;
+                                    loot.x = e.x + (Math.random() - 0.5) * 50;
+                                    loot.y = e.y + (Math.random() - 0.5) * 50;
+                                    loot.lifeTime = 60;
+                                    loot.itemData = keyItem;
+                                    loot.rarity = 'unique';
+                                    loot.autoCollectRadius = 50;
+                                }
+                            }
+                            this.callbacks.onNotification("DROPPED: Endless Void Keys!");
+
                             // AUTO-MAGNETIZE ORBS ON CLEAR
                             this.xpOrbs.forEach(o => {
                                 if (o.active) o.magnetized = true;
@@ -2964,20 +3023,95 @@ export class GameEngine {
         for (const e of this.enemies) {
             if (!e.active) continue;
             
+            // Optimization: Skip rendering if out of view
             if (e.x + e.width < camX - visibleWidth/2 || e.x > camX + visibleWidth/2 ||
                 e.y + e.height < camY - visibleHeight/2 || e.y > camY + visibleHeight/2) {
                  if (e.type === 'boss') activeBoss = e; 
                  continue;
             }
-            
-            let key = 'enemy';
-            if (e.type === 'fast') key = 'enemyFast';
-            if (e.type === 'tank') key = 'enemyTank';
-            if (e.type === 'boss') { key = 'enemyBoss'; activeBoss = e; }
-            
+
+            if (e.type === 'boss') activeBoss = e;
+
+            // --- SHADOW CREATURE RENDERING ---
+            ctx.save();
+            const cx = e.x + e.width / 2;
+            const cy = e.y + e.height / 2;
+            ctx.translate(cx, cy);
+
+            // 1. Determine Color Theme
+            let themeColor = 'rgba(239, 68, 68, 1)'; // Red (Basic)
+            let glowColor = 'rgba(239, 68, 68, 0.6)';
+            let eyeColor = '#fee2e2';
+
+            if (e.type === 'fast') {
+                themeColor = 'rgba(6, 182, 212, 1)'; // Cyan
+                glowColor = 'rgba(6, 182, 212, 0.6)';
+                eyeColor = '#cffafe';
+            } else if (e.type === 'tank') {
+                themeColor = 'rgba(168, 85, 247, 1)'; // Purple
+                glowColor = 'rgba(168, 85, 247, 0.6)';
+                eyeColor = '#f3e8ff';
+            } else if (e.type === 'boss') {
+                 themeColor = 'rgba(234, 179, 8, 1)'; // Gold
+                 glowColor = 'rgba(234, 179, 8, 0.8)';
+                 eyeColor = '#ffffff';
+            }
+
+            // Ghostly modifier transparency
             if (e.modifiers.includes('ghostly')) ctx.globalAlpha = 0.6;
-            
-            drawSprite(key, e.x, e.y, e.width, e.height, ENEMY_COLOR);
+
+            // 2. Aura / Shadow
+            ctx.shadowColor = themeColor;
+            ctx.shadowBlur = e.type === 'boss' ? 30 : 15;
+
+            // 3. Dark Body Base
+            ctx.fillStyle = '#09090b'; // Zinc-950 (Dark matter)
+            ctx.beginPath();
+            const r = e.width / 2;
+            // Draw slightly smaller than hitbox to account for glow
+            ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 4. Inner Core Glow (Gradient)
+            // Reset shadow to avoid expensive double-blur on gradient
+            ctx.shadowBlur = 0;
+            const grad = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+            grad.addColorStop(0, glowColor);
+            grad.addColorStop(0.6, 'rgba(0,0,0,0.1)'); // Fade out
+            grad.addColorStop(1, 'rgba(0,0,0,0)'); // Transparent edge
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 5. Glowing Eyes
+            // Calculate angle to player to make eyes look at player
+            const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
+            const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
+            const angle = Math.atan2(py - cy, px - cx);
+
+            ctx.rotate(angle); // Rotate context to face player
+
+            ctx.fillStyle = eyeColor;
+            ctx.shadowColor = eyeColor;
+            ctx.shadowBlur = 5;
+
+            // Draw Eyes
+            const eyeOffset = r * 0.35;
+            const eyeSizeX = r * 0.25;
+            const eyeSizeY = r * 0.12;
+
+            // Left Eye
+            ctx.beginPath();
+            ctx.ellipse(eyeOffset, -eyeOffset/2, eyeSizeX, eyeSizeY, 0, 0, Math.PI*2);
+            ctx.fill();
+            // Right Eye
+            ctx.beginPath();
+            ctx.ellipse(eyeOffset, eyeOffset/2, eyeSizeX, eyeSizeY, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.restore();
             
             ctx.globalAlpha = 1.0; 
 
@@ -3012,7 +3146,14 @@ export class GameEngine {
             if (e.isElite) {
                 ctx.strokeStyle = ELITE_COLOR;
                 ctx.lineWidth = 3;
-                ctx.strokeRect(e.x - 2, e.y - 2, e.width + 4, e.height + 4);
+                // Draw a diamond indicator for elite
+                ctx.beginPath();
+                ctx.moveTo(e.x + e.width/2, e.y - 10);
+                ctx.lineTo(e.x + e.width + 10, e.y + e.height/2);
+                ctx.lineTo(e.x + e.width/2, e.y + e.height + 10);
+                ctx.lineTo(e.x - 10, e.y + e.height/2);
+                ctx.closePath();
+                ctx.stroke();
             }
 
             if (e.modifiers.includes('berserker') && e.hp < (e.maxHp || 100) * 0.5) {
