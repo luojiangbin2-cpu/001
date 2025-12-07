@@ -1,5 +1,4 @@
 
-
 import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag } from "./types";
 import { StatsSystem } from "./StatsSystem";
 
@@ -54,6 +53,24 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             ailmentChance: 1.0
         }
     },
+    'electro_sphere': {
+        id: 'electro_sphere',
+        name: 'Electro Sphere',
+        type: 'active',
+        tags: ['projectile', 'area', 'lightning', 'duration'],
+        description: 'Launches a slow-moving orb that pulses electricity on contact.',
+        baseStats: {
+            damage: 12,
+            attackRate: 1.2,
+            projectileCount: 1,
+            projectileSpeed: 150,
+            projectileSpread: 0,
+            pierceCount: 999,
+            areaOfEffect: 80,
+            duration: 3.0,
+            range: 800
+        }
+    },
     'flame_ring': {
         id: 'flame_ring',
         name: 'Flame Ring',
@@ -71,6 +88,22 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
 
     // SUPPORT GEMS
+    'orbit': {
+        id: 'orbit',
+        name: 'Orbit Support',
+        type: 'support',
+        tags: [],
+        supportedTags: ['projectile'], // Only supports projectile skills
+        description: 'Projectiles orbit around you.',
+        baseStats: {
+            orbit: 1,
+            duration: 2.0 // Add duration so balls spin for a while
+        },
+        statMultipliers: {
+            projectileSpeed: 0.5, // Slow down speed for clearer visuals
+            damage: 0.8
+        }
+    },
     'pierce': {
         id: 'pierce',
         name: 'Pierce Support',
@@ -200,7 +233,8 @@ export class SkillManager {
             duration: definition.baseStats.duration || 0,
             ailmentChance: definition.baseStats.ailmentChance || 0,
             knockback: definition.baseStats.knockback || 0,
-            pierceCount: definition.baseStats.pierceCount || 0
+            pierceCount: definition.baseStats.pierceCount || 0,
+            orbit: definition.baseStats.orbit || 0
         };
 
         const activeTags = definition.tags; // This is the context for StatsSystem
@@ -223,6 +257,8 @@ export class SkillManager {
                         if (supportDef.baseStats.cooldown) finalStats.cooldown += supportDef.baseStats.cooldown;
                         if (supportDef.baseStats.areaOfEffect) finalStats.areaOfEffect += supportDef.baseStats.areaOfEffect;
                         if (supportDef.baseStats.pierceCount) finalStats.pierceCount += supportDef.baseStats.pierceCount;
+                        if (supportDef.baseStats.orbit) finalStats.orbit += supportDef.baseStats.orbit;
+                        if (supportDef.baseStats.duration) finalStats.duration += supportDef.baseStats.duration;
                     }
 
                     // Apply Multipliers

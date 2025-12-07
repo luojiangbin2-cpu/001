@@ -165,6 +165,7 @@ export class GameEngine {
         
         activeSkills[0].activeGem = createGemItem('fireball'); // Fireball in Slot 1
         activeSkills[1].activeGem = createGemItem('flame_ring');  // Flame Ring (Defense)
+        activeSkills[2].activeGem = createGemItem('electro_sphere'); // Electro Sphere in Slot 3
 
         // Give starter maps
         const starterMaps = [
@@ -1300,7 +1301,7 @@ export class GameEngine {
         }
     }
 
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0) {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0, behavior: 'normal' | 'orbit' = 'normal') {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -1318,6 +1319,14 @@ export class GameEngine {
         bullet.damage = damage;
         bullet.pierce = pierce;
         bullet.ailmentChance = ailmentChance;
+        bullet.behavior = behavior;
+        if (behavior === 'orbit') {
+            bullet.orbitAngle = angle;
+            bullet.orbitRadius = 120; // Default orbit radius
+            bullet.initialSpeed = speed;
+            bullet.vx = 0; // Controlled by update
+            bullet.vy = 0;
+        }
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1480,7 +1489,9 @@ export class GameEngine {
         }
 
         if (skill.tags.includes('projectile')) {
-            if (!nearest && skill.definition.id !== 'nova') {
+            const isOrbit = skill.stats.orbit > 0;
+
+            if (!nearest && skill.definition.id !== 'nova' && !isOrbit) {
                  if (!this.joystickState.active) return;
             }
 
@@ -1501,11 +1512,19 @@ export class GameEngine {
 
             const spreadRad = skill.stats.projectileSpread * (Math.PI / 180);
             const startAngle = baseAngle - ((safeCount - 1) * spreadRad) / 2;
-            const size = 15;
+            const size = skill.definition.id === 'electro_sphere' ? 30 : 15;
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
 
             for (let i = 0; i < safeCount; i++) {
-                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance);
+                let angle = 0;
+                if (isOrbit) {
+                     // Orbit mode: Evenly distributed around circle
+                     angle = (Math.PI * 2 / safeCount) * i + baseAngle;
+                } else {
+                     angle = (safeCount > 1 ? startAngle + i * spreadRad : baseAngle);
+                }
+                
+                this.spawnBullet(px, py, angle, 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance, isOrbit ? 'orbit' : 'normal');
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -2321,9 +2340,25 @@ export class GameEngine {
 
         for (const b of this.bullets) {
             if (!b.active) continue;
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
-            b.lifeTime -= dt;
+
+            if (b.behavior === 'orbit' && b.owner === 'player') {
+                // Orbit Physics Update
+                const angularSpeed = (b.initialSpeed || 200) / (b.orbitRadius || 120);
+                b.orbitAngle = (b.orbitAngle || 0) + angularSpeed * dt;
+                
+                const playerCenterX = this.gameState.playerWorldPos.x + PLAYER_SIZE / 2;
+                const playerCenterY = this.gameState.playerWorldPos.y + PLAYER_SIZE / 2;
+                
+                b.x = playerCenterX + Math.cos(b.orbitAngle) * (b.orbitRadius || 120) - b.width/2;
+                b.y = playerCenterY + Math.sin(b.orbitAngle) * (b.orbitRadius || 120) - b.height/2;
+                
+                b.lifeTime -= dt;
+            } else {
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.lifeTime -= dt;
+            }
+
             if (b.lifeTime <= 0) { b.active = false; continue; }
 
             // --- FIREBALL TRAIL PARTICLES ---
@@ -2383,6 +2418,34 @@ export class GameEngine {
 
                         this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
                         
+                        // --- ELECTRO SPHERE LOGIC ---
+                        if (b.damageType === 'lightning' && b.owner === 'player') {
+                             // 1. Visual Pulse
+                             this.visualEffects.push({
+                                 id: Math.random(),
+                                 active: true,
+                                 type: 'shockwave',
+                                 x: e.x + e.width/2,
+                                 y: e.y + e.height/2,
+                                 radius: 80, // Approximate Area
+                                 lifeTime: 0.2,
+                                 maxLifeTime: 0.2,
+                                 color: '#22d3ee'
+                             });
+
+                             // 2. AOE Splash (50% damage)
+                             const splashRadius = 80;
+                             for (const other of this.enemies) {
+                                 if (!other.active || other.id === e.id) continue;
+                                 const ox = other.x + other.width/2;
+                                 const oy = other.y + other.height/2;
+                                 const dist = Math.sqrt((ox - (e.x+e.width/2))**2 + (oy - (e.y+e.height/2))**2);
+                                 if (dist < splashRadius + other.width/2) {
+                                     this.applyDamage(other, finalDmg * 0.5, isCrit, 'lightning', this.gameState.playerWorldPos, b.ailmentChance);
+                                 }
+                             }
+                        }
+
                         // Pierce Logic
                         if (b.pierce > 0) {
                             b.pierce--;
@@ -2965,51 +3028,6 @@ export class GameEngine {
                 ctx.beginPath();
                 ctx.arc(0, 0, Math.max(0, currentRadius * 0.8), 0, Math.PI * 2);
                 ctx.stroke();
-
-                ctx.restore();
-            } else if (eff.type === 'falling_ice') {
-                ctx.save();
-                // Calculate falling animation: Accelerate from height (h=300)
-                const dropHeight = 300;
-                const progress = 1 - (eff.lifeTime / eff.maxLifeTime); // 0 to 1
-                const easeIn = progress * progress; // Acceleration
-                const currentY = eff.y - dropHeight * (1 - easeIn); 
-
-                ctx.translate(eff.x, currentY);
-
-                // 1. Draw Ice Shard (Inverted Triangle)
-                ctx.beginPath();
-                // Ice Blue Gradient
-                const grad = ctx.createLinearGradient(0, -60, 0, 0);
-                grad.addColorStop(0, 'rgba(255, 255, 255, 0)'); // Tail transparent
-                grad.addColorStop(0.5, '#bae6fd'); // Sky-200
-                grad.addColorStop(1, '#ffffff'); // Tip pure white
-                ctx.fillStyle = grad;
-                
-                ctx.moveTo(0, 0); // Tip
-                ctx.lineTo(-8, -80); // Top Left
-                ctx.lineTo(8, -80); // Top Right
-                ctx.fill();
-
-                // 2. Draw Trail (Speed Lines)
-                ctx.beginPath();
-                ctx.fillStyle = 'rgba(186, 230, 253, 0.3)';
-                ctx.moveTo(0, -20);
-                ctx.lineTo(-4, -120);
-                ctx.lineTo(4, -120);
-                ctx.fill();
-
-                // 3. Impact Shockwave (Last 20%)
-                if (progress > 0.8) {
-                    // Restore drawing context effectively to ground level implicitly by logic or check
-                    // Since currentY is very close to eff.y here, we draw locally
-                    const impactProgress = (progress - 0.8) * 5; // 0 to 1
-                    ctx.scale(1 + impactProgress, 0.5 + impactProgress * 0.5); // Flattened expansion
-                    ctx.beginPath();
-                    ctx.fillStyle = `rgba(255, 255, 255, ${1 - impactProgress})`; // Fade out
-                    ctx.arc(0, 0, 40 * impactProgress, 0, Math.PI * 2);
-                    ctx.fill();
-                }
 
                 ctx.restore();
             }
