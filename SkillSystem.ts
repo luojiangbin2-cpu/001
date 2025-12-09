@@ -40,18 +40,37 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
     'nova': {
         id: 'nova',
-        name: 'Ice Nova',
+        name: 'Blizzard',
         type: 'active',
-        tags: ['area', 'projectile', 'cold'], 
-        description: 'Explodes projectiles in a circle.',
+        tags: ['area', 'cold'], 
+        description: 'Summons ice shards to strike random enemies nearby. 100% Chill.',
         baseStats: {
-            damage: 25,
-            attackRate: 1.0,
-            projectileCount: 8,
-            projectileSpeed: 400,
-            projectileSpread: 360,
+            damage: 30,
+            attackRate: 0.8,
+            projectileCount: 5,
+            projectileSpeed: 0,
+            projectileSpread: 0,
             areaOfEffect: 0,
-            range: 320
+            range: 450,
+            ailmentChance: 1.0
+        }
+    },
+    'electro_sphere': {
+        id: 'electro_sphere',
+        name: 'Electro Sphere',
+        type: 'active',
+        tags: ['projectile', 'area', 'lightning', 'duration'],
+        description: 'Launches a slow-moving orb that pulses electricity on contact.',
+        baseStats: {
+            damage: 12,
+            attackRate: 1.2,
+            projectileCount: 1,
+            projectileSpeed: 150,
+            projectileSpread: 0,
+            pierceCount: 999,
+            areaOfEffect: 80,
+            duration: 3.0,
+            range: 800
         }
     },
     'flame_ring': {
@@ -71,6 +90,22 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
 
     // SUPPORT GEMS
+    'orbit': {
+        id: 'orbit',
+        name: 'Orbit Support',
+        type: 'support',
+        tags: [],
+        supportedTags: ['projectile'],
+        description: 'Projectiles orbit around the caster.',
+        baseStats: {
+            orbit: 1,
+            duration: 2.0
+        },
+        statMultipliers: {
+            projectileSpeed: 0.5,
+            damage: 0.8
+        }
+    },
     'pierce': {
         id: 'pierce',
         name: 'Pierce Support',
@@ -198,7 +233,7 @@ export class SkillManager {
             projectileSpeed: definition.baseStats.projectileSpeed || 0,
             projectileSpread: definition.baseStats.projectileSpread || 0,
             duration: definition.baseStats.duration || 0,
-            ailmentChance: 0,
+            ailmentChance: definition.baseStats.ailmentChance || 0,
             knockback: definition.baseStats.knockback || 0,
             pierceCount: definition.baseStats.pierceCount || 0,
             orbit: definition.baseStats.orbit || 0
@@ -224,6 +259,7 @@ export class SkillManager {
                         if (supportDef.baseStats.cooldown) finalStats.cooldown += supportDef.baseStats.cooldown;
                         if (supportDef.baseStats.areaOfEffect) finalStats.areaOfEffect += supportDef.baseStats.areaOfEffect;
                         if (supportDef.baseStats.pierceCount) finalStats.pierceCount += supportDef.baseStats.pierceCount;
+                        if (supportDef.baseStats.duration) finalStats.duration += supportDef.baseStats.duration;
                         if (supportDef.baseStats.orbit) finalStats.orbit += supportDef.baseStats.orbit;
                     }
 
@@ -258,7 +294,7 @@ export class SkillManager {
         finalStats.projectileCount += (playerProjCount - 1);
         
         // Ailment Chance
-        finalStats.ailmentChance = playerStats.getStatValue('ailmentChance', activeTags);
+        finalStats.ailmentChance += playerStats.getStatValue('ailmentChance', activeTags);
         
         // Pierce Count
         finalStats.pierceCount += playerStats.getStatValue('pierceCount', activeTags);
