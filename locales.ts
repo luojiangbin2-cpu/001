@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 export const TRANSLATIONS = {
   en: {
     // UI Buttons
@@ -147,7 +140,7 @@ export const TRANSLATIONS = {
     skill_gmp_name: "Greater Multiple Projectiles",
     skill_gmp_desc: "4 additional Projectiles, 50% less Damage",
     skill_faster_attacks_name: "Faster Attacks",
-    skill_faster_attacks_desc: "30% more Attack Speed",
+    skill_faster_attacks_desc: "35% increased Attack Speed, 50% less Damage",
     skill_inc_area_name: "Increased Area",
     skill_inc_area_desc: "40% more Area of Effect",
     skill_conc_effect_name: "Concentrated Effect",
@@ -181,6 +174,8 @@ export const TRANSLATIONS = {
     affix_sharp: "Critical Strike Chance",
     affix_iron: "Armour",
     affix_pyromancer: "Increased Fire Damage",
+    affix_cryomancer: "Increased Cold Damage",
+    affix_electromancer: "Increased Lightning Damage",
     affix_sniper: "Increased Projectile Damage",
     affix_giant: "Increased Area of Effect",
     affix_deadly: "Increased Monster Damage",
@@ -342,7 +337,7 @@ export const TRANSLATIONS = {
     skill_gmp_name: "高阶多重投射",
     skill_gmp_desc: "投射物数量增加 4 个，伤害总降 50%",
     skill_faster_attacks_name: "快速攻击",
-    skill_faster_attacks_desc: "攻击速度总增 30%",
+    skill_faster_attacks_desc: "攻击速度增加 35%，伤害总降 50%",
     skill_inc_area_name: "增大范围",
     skill_inc_area_desc: "范围效果总增 40%",
     skill_conc_effect_name: "集中效应",
@@ -376,6 +371,8 @@ export const TRANSLATIONS = {
     affix_sharp: "暴击率",
     affix_iron: "护甲",
     affix_pyromancer: "火焰伤害增加",
+    affix_cryomancer: "冰霜伤害增加",
+    affix_electromancer: "闪电伤害增加",
     affix_sniper: "投射物伤害增加",
     affix_giant: "范围效果增加",
     affix_deadly: "怪物伤害增加",

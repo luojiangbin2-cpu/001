@@ -1,4 +1,3 @@
-
 import { ItemSlot, ItemRarity, ItemInstance, AffixDefinition, AffixType, ItemAffixInstance, UpgradeDefinition, SkillDefinition } from './types';
 import { SKILL_DATABASE } from './SkillSystem';
 
@@ -26,7 +25,7 @@ export const AFFIX_DATABASE: AffixDefinition[] = [
     name: 'Heavy',
     type: 'prefix',
     stat: 'bulletDamage',
-    validSlots: ['weapon', 'offhand', 'ring1', 'ring2', 'amulet', 'gloves'],
+    validSlots: ['amulet'],
     minVal: 10,
     maxVal: 30,
     valueType: 'increased'
@@ -97,6 +96,28 @@ export const AFFIX_DATABASE: AffixDefinition[] = [
     maxVal: 0.30,
     valueType: 'increased',
     tags: ['fire']
+  },
+  {
+    id: 'prefix_cryomancer',
+    name: "Cryomancer's",
+    type: 'prefix',
+    stat: 'bulletDamage',
+    validSlots: ['ring1', 'ring2', 'amulet', 'weapon'],
+    minVal: 0.30,
+    maxVal: 0.30,
+    valueType: 'increased',
+    tags: ['cold']
+  },
+  {
+    id: 'prefix_electromancer',
+    name: "Electromancer's",
+    type: 'prefix',
+    stat: 'bulletDamage',
+    validSlots: ['ring1', 'ring2', 'amulet', 'weapon'],
+    minVal: 0.30,
+    maxVal: 0.30,
+    valueType: 'increased',
+    tags: ['lightning']
   },
   {
     id: 'prefix_sniper',

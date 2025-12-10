@@ -165,7 +165,6 @@ export class GameEngine {
         
         activeSkills[0].activeGem = createGemItem('fireball'); // Fireball in Slot 1
         activeSkills[1].activeGem = createGemItem('flame_ring');  // Flame Ring (Defense)
-        activeSkills[2].activeGem = createGemItem('electro_sphere'); // Electro Sphere in Slot 3
 
         // Give starter maps
         const starterMaps = [
@@ -1391,6 +1390,74 @@ export class GameEngine {
             // Determine if stunned/knocked back
             const isKnockedBack = enemy.knockbackVelocity && (Math.abs(enemy.knockbackVelocity.x) > 10 || Math.abs(enemy.knockbackVelocity.y) > 10);
 
+            // --- BOSS AI START ---
+            if (enemy.type === 'boss') {
+                // 阶段转换检测
+                if (enemy.bossState === 'phase1' && enemy.hp < (enemy.maxHp || 1) * 0.5) {
+                    enemy.bossState = 'phase2';
+                    enemy.color = '#ef4444'; // 变红
+                    enemy.width *= 1.2; enemy.height *= 1.2; // 变大
+                    enemy.speed *= 1.3; // 加速
+                    this.callbacks.onNotification("🔥 BOSS ENRAGED! 🔥");
+                    this.triggerShake(0.5);
+                }
+
+                // 技能循环
+                enemy.skillTimer = (enemy.skillTimer || 0) - dt;
+                if (enemy.skillType) {
+                    // 正在释放技能中，停止移动
+                    enemy.skillDuration = (enemy.skillDuration || 0) - dt;
+                    if (enemy.skillType === 'spiral') {
+                        // 螺旋弹幕逻辑：每帧发射旋转子弹
+                        if (Math.random() < 0.3) { // 限制发射频率
+                            const angle = (Date.now() / 200) % (Math.PI * 2);
+                            for(let k=0; k<4; k++) { // 4个方向
+                                this.spawnBullet(enemy.x + enemy.width/2, enemy.y + enemy.height/2, angle + k*(Math.PI/2), 'enemy', 200, 15, '#a855f7', 'lightning', 15);
+                            }
+                        }
+                    }
+                    
+                    if (enemy.skillDuration <= 0) {
+                        enemy.skillType = undefined; // 技能结束
+                        enemy.skillTimer = enemy.bossState === 'phase2' ? 1.5 : 3.0; // 狂暴后CD更短
+                    }
+                    continue; // 跳过移动逻辑，站桩施法
+                } 
+                else if ((enemy.skillTimer || 0) <= 0) {
+                    // 随机选择技能
+                    const rand = Math.random();
+                    if (enemy.bossState === 'phase1') {
+                        if (rand < 0.6) { // 60% 螺旋弹幕
+                            enemy.skillType = 'spiral';
+                            enemy.skillDuration = 2.0;
+                            this.spawnFloatingText(enemy.x, enemy.y, "SPIRAL!", "#a855f7");
+                        } else { // 40% 召唤小弟
+                            enemy.skillType = 'summon';
+                            enemy.skillDuration = 0.5;
+                            this.spawnEnemy('fast'); this.spawnEnemy('fast');
+                            this.spawnFloatingText(enemy.x, enemy.y, "MINIONS!", "#ef4444");
+                        }
+                    } else {
+                        // Phase 2
+                        if (rand < 0.5) { // 50% 螺旋弹幕 (更快)
+                            enemy.skillType = 'spiral';
+                            enemy.skillDuration = 1.5;
+                        } else { // 50% 毁灭打击 (玩家脚下生成红圈)
+                            enemy.skillType = 'blast';
+                            enemy.skillDuration = 0.5; // 施法动作快
+                            const px = this.gameState.playerWorldPos.x + 20;
+                            const py = this.gameState.playerWorldPos.y + 20;
+                            this.gameState.groundEffects.push({
+                                    id: Math.random().toString(),
+                                    x: px, y: py, radius: 100, type: 'blast_warning', duration: 1.5, damageType: 'fire'
+                            });
+                            this.spawnFloatingText(enemy.x, enemy.y, "DOOM!", "#ef4444", 1.5);
+                        }
+                    }
+                }
+            }
+            // --- BOSS AI END ---
+
             // STATUS UPDATE LOGIC
             // Ignited: DoT
             if (enemy.statuses['ignited']) {
@@ -1470,7 +1537,7 @@ export class GameEngine {
             }
 
             // MOVEMENT LOGIC (Only if not stunned by knockback)
-            if (!isKnockedBack) {
+            if (!isKnockedBack && !enemy.skillType) {
                 const cx = enemy.x + enemy.width/2;
                 const cy = enemy.y + enemy.height/2;
                 const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
@@ -2516,7 +2583,7 @@ export class GameEngine {
             enemy.attackTimer = undefined;
         }
     }
-
+    
     private drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, dt: number) {
         const time = Date.now() / 1000;
         const isMoving = this.joystickState.active;
@@ -2832,13 +2899,6 @@ export class GameEngine {
             }
             else if (effect.type === 'blast_warning') {
                 // "Doom" Timer style
-                // Assuming duration starts around 1.0 - 2.0. 
-                // We want to fill UP from center.
-                // Estimate progress assuming a default max of ~2s for visual consistency if max isn't stored, 
-                // OR relative to 1.0 if it's a normalized mechanic. 
-                // Previous code used `pct = 1.0 - effect.duration`. Let's stick to that pattern assuming ~1.5s max usually.
-                
-                // Clamp progress 0 to 1
                 const progress = Math.max(0, Math.min(1, 1.0 - (effect.duration / 1.5))); 
 
                 // 1. Danger Zone Background

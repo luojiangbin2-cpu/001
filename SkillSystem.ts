@@ -37,17 +37,37 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
     'nova': {
         id: 'nova',
-        name: 'Ice Nova',
+        name: 'Blizzard',
         type: 'active',
-        tags: ['area', 'projectile', 'cold'], 
-        description: 'Explodes projectiles in a circle.',
+        tags: ['area', 'cold'], 
+        description: 'Summons ice shards to strike random enemies nearby. 100% Chill.',
         baseStats: {
-            damage: 20,
-            attackRate: 1.0,
-            projectileCount: 8,
-            projectileSpeed: 400,
-            projectileSpread: 360,
-            areaOfEffect: 0
+            damage: 30,
+            attackRate: 0.8,
+            projectileCount: 5,
+            projectileSpeed: 0,
+            projectileSpread: 0,
+            areaOfEffect: 0,
+            range: 280,
+            ailmentChance: 1.0
+        }
+    },
+    'electro_sphere': {
+        id: 'electro_sphere',
+        name: 'Electro Sphere',
+        type: 'active',
+        tags: ['projectile', 'area', 'lightning', 'duration'],
+        description: 'Launches a slow-moving orb that pulses electricity on contact.',
+        baseStats: {
+            damage: 12,
+            attackRate: 1.2,
+            projectileCount: 1,
+            projectileSpeed: 150,
+            projectileSpread: 0,
+            pierceCount: 999,
+            areaOfEffect: 80,
+            duration: 3.0,
+            range: 800
         }
     },
     'flame_ring': {
@@ -65,25 +85,24 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             knockback: 600 // Physics force
         }
     },
-    'electro_sphere': {
-        id: 'electro_sphere',
-        name: 'Electro Sphere',
-        type: 'active',
-        tags: ['projectile', 'lightning', 'area'],
-        description: 'Fires a slow moving lightning orb that pierces enemies and triggers electric pulses.',
-        baseStats: {
-            damage: 12,
-            attackRate: 0.8,
-            projectileCount: 1,
-            projectileSpeed: 150, // Slow
-            projectileSpread: 0,
-            range: 600,
-            areaOfEffect: 80,
-            pierceCount: 99 // Infinite pierce essentially
-        }
-    },
 
     // SUPPORT GEMS
+    'orbit': {
+        id: 'orbit',
+        name: 'Orbit Support',
+        type: 'support',
+        tags: [],
+        supportedTags: ['projectile'],
+        description: 'Projectiles orbit around the caster.',
+        baseStats: {
+            orbit: 1,
+            duration: 2.0
+        },
+        statMultipliers: {
+            projectileSpeed: 0.5,
+            damage: 0.8
+        }
+    },
     'pierce': {
         id: 'pierce',
         name: 'Pierce Support',
@@ -131,10 +150,11 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
         type: 'support',
         tags: [],
         supportedTags: ['melee', 'projectile'],
-        description: '30% Faster Attack Speed',
+        description: '35% Faster Attack Speed, 50% Less Damage',
         baseStats: {},
         statMultipliers: {
-            attackRate: 1.3
+            attackRate: 1.35,
+            damage: 0.5
         }
     },
     'gmp': {
@@ -163,20 +183,6 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
         statMultipliers: {
             damage: 1.5,
             areaOfEffect: 0.7
-        }
-    },
-    'orbit': {
-        id: 'orbit',
-        name: 'Orbit Support',
-        type: 'support',
-        tags: [],
-        supportedTags: ['projectile'],
-        description: 'Projectiles orbit the caster.',
-        baseStats: {
-            orbit: 1
-        },
-        statMultipliers: {
-            damage: 0.8
         }
     }
 };
@@ -225,7 +231,7 @@ export class SkillManager {
             projectileSpeed: definition.baseStats.projectileSpeed || 0,
             projectileSpread: definition.baseStats.projectileSpread || 0,
             duration: definition.baseStats.duration || 0,
-            ailmentChance: 0,
+            ailmentChance: definition.baseStats.ailmentChance || 0,
             knockback: definition.baseStats.knockback || 0,
             pierceCount: definition.baseStats.pierceCount || 0,
             orbit: definition.baseStats.orbit || 0
@@ -251,7 +257,8 @@ export class SkillManager {
                         if (supportDef.baseStats.cooldown) finalStats.cooldown += supportDef.baseStats.cooldown;
                         if (supportDef.baseStats.areaOfEffect) finalStats.areaOfEffect += supportDef.baseStats.areaOfEffect;
                         if (supportDef.baseStats.pierceCount) finalStats.pierceCount += supportDef.baseStats.pierceCount;
-                        if (supportDef.baseStats.orbit) finalStats.orbit = 1;
+                        if (supportDef.baseStats.duration) finalStats.duration += supportDef.baseStats.duration;
+                        if (supportDef.baseStats.orbit) finalStats.orbit += supportDef.baseStats.orbit;
                     }
 
                     // Apply Multipliers
@@ -268,28 +275,33 @@ export class SkillManager {
         // 3. Apply Player Global Stats (using the Tag Context)
         
         // Damage Calculation:
+        // We use the player's 'bulletDamage' stat as the global scaler for skill damage.
+        // Base value for player bulletDamage is usually 10 (from GameEngine init).
+        // If player has "+50% Projectile Damage" (and skill is Projectile), getStatValue returns ~15.
+        // 15 / 10 = 1.5x Multiplier.
         const playerGlobalDmg = playerStats.getStatValue('bulletDamage', activeTags);
         const playerDmgRatio = playerGlobalDmg / 10; 
         finalStats.damage *= playerDmgRatio;
 
-        // --- Attack Speed Balance Logic ---
-        // Get player total attack speed multiplier (e.g., 1.5 means +50% speed)
+        // --- 攻速平衡逻辑 Start (New) ---
+        // 1. 获取玩家的总攻速倍率（例如 1.5 代表 +50% 攻速）
         const playerAtkSpdRatio = playerStats.getStatValue('attackSpeed', activeTags);
 
-        // Calculate "bonus" part (e.g. 1.5 -> 0.5)
+        // 2. 计算出“额外增加的部分”（例如 1.5 -> 0.5）
         const bonusAtkSpd = Math.max(0, playerAtkSpdRatio - 1);
 
-        // Default effectiveness 100%
+        // 3. 默认攻速收益系数为 1.0 (100%收益)
         let speedEffectiveness = 1.0;
 
-        // Rule: If skill has 'area' tag but NOT 'melee', treat as spell/bombardment
-        // Halve attack speed scaling to prevent performance issues and screen clutter
+        // 4. 平衡规则：如果技能带有 'area' 标签且不是 'melee' (近战)
+        // 我们将其视为“大范围法术”，强制将其攻速收益减半 (0.5)，防止后期卡顿和数值崩坏。
         if (activeTags.includes('area') && !activeTags.includes('melee')) {
             speedEffectiveness = 0.5;
         }
 
-        // Apply corrected formula: Base * (1 + Bonus * Effectiveness)
+        // 5. 应用修正后的公式：基础攻速 * (1 + 额外攻速 * 收益系数)
         finalStats.attackRate *= (1 + bonusAtkSpd * speedEffectiveness);
+        // --- 攻速平衡逻辑 End ---
 
         // Projectile Count: Additive
         // If stats says "1" (base), we add 0 extra. If stats says "2" (base 1 + 1 extra), we add 1.
@@ -297,7 +309,7 @@ export class SkillManager {
         finalStats.projectileCount += (playerProjCount - 1);
         
         // Ailment Chance
-        finalStats.ailmentChance = playerStats.getStatValue('ailmentChance', activeTags);
+        finalStats.ailmentChance += playerStats.getStatValue('ailmentChance', activeTags);
         
         // Pierce Count
         finalStats.pierceCount += playerStats.getStatValue('pierceCount', activeTags);

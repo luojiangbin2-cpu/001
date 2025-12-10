@@ -150,6 +150,11 @@ export interface Enemy extends Entity {
     knockbackVelocity?: Vector2;
     trailTimer?: number;
     blastTimer?: number;
+    // Boss specific
+    bossState?: 'phase1' | 'phase2';
+    skillTimer?: number;
+    skillType?: 'spiral' | 'summon' | 'blast';
+    skillDuration?: number;
 }
 
 export type BulletOwner = 'player' | 'enemy';
