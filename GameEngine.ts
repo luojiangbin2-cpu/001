@@ -2964,22 +2964,84 @@ export class GameEngine {
             if (int.type === 'map_device') {
                 ctx.save();
                 ctx.translate(int.x + int.width/2, int.y + int.height/2);
-                ctx.fillStyle = '#1e293b';
+
+                // 1. Pedestal (Stone Base)
+                ctx.fillStyle = '#292524'; // Stone-800
                 ctx.beginPath();
-                ctx.arc(0, 0, 40, 0, Math.PI * 2);
+                ctx.arc(0, 0, 50, 0, Math.PI * 2);
                 ctx.fill();
-                
-                const t = Date.now() / 1000;
-                ctx.strokeStyle = '#c026d3';
+                ctx.strokeStyle = '#57534e'; // Stone-600 Highlight
                 ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(0, 0, 30, t, t + Math.PI * 1.5);
                 ctx.stroke();
 
-                ctx.strokeStyle = '#e879f9';
+                // 2. Pillars (Cardinal Supports)
+                ctx.fillStyle = '#44403c'; // Stone-700
+                for(let i=0; i<4; i++) {
+                    ctx.save();
+                    ctx.rotate((Math.PI / 2) * i);
+                    ctx.translate(0, -48); // Push out to edge
+                    ctx.fillRect(-8, -8, 16, 16); // Square Pillar
+                    // Bevel detail
+                    ctx.strokeStyle = '#1c1917';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(-8, -8, 16, 16);
+                    ctx.restore();
+                }
+
+                const t = Date.now() / 1000;
+
+                // 3. Mechanical Ring (Bronze Gear)
+                ctx.save();
+                ctx.rotate(t * 0.5); // Slow Rotation
+                ctx.strokeStyle = '#b45309'; // Amber-700 (Bronze)
+                ctx.lineWidth = 4;
+                ctx.setLineDash([8, 6]); // Gear teeth look
                 ctx.beginPath();
-                ctx.arc(0, 0, 20, -t * 1.5, -t * 1.5 + Math.PI);
+                ctx.arc(0, 0, 38, 0, Math.PI * 2);
                 ctx.stroke();
+                ctx.restore();
+
+                // 4. Energy Core (Void Receptacle)
+                ctx.save();
+                // Breathing effect
+                const pulse = 1 + Math.sin(t * 2) * 0.05;
+                ctx.scale(pulse, pulse);
+
+                const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 32);
+                grad.addColorStop(0, '#d8b4fe'); // Light Purple core
+                grad.addColorStop(0.4, '#7e22ce'); // Purple body
+                grad.addColorStop(1, '#000000');   // Dark edge
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 32, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Inner Void Swirls (Counter-rotating)
+                ctx.rotate(-t);
+                ctx.strokeStyle = 'rgba(216, 180, 254, 0.3)'; // Faint Lavender
+                ctx.lineWidth = 2;
+                ctx.setLineDash([]); // Reset dash
+                ctx.beginPath();
+                ctx.arc(0, 0, 20, 0, Math.PI * 1.5); // Incomplete circle
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(0, 0, 10, Math.PI, Math.PI * 2.5); // Smaller incomplete circle offset
+                ctx.stroke();
+
+                ctx.restore();
+
+                // 5. Floating Hologram
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#d8b4fe';
+                ctx.shadowBlur = 10;
+                // Bobbing up and down
+                ctx.fillText("🗺️", 0, -10 + Math.sin(t * 3) * 3);
+                ctx.shadowBlur = 0; // Reset
+
                 ctx.restore();
             } else if (int.type.includes('portal')) {
                 ctx.save();
