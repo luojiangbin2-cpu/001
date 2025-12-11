@@ -543,6 +543,11 @@ export const GameCanvas: React.FC = () => {
                      <span className={`text-white font-serif font-bold ${isSupport ? 'text-2xl' : 'text-3xl'} drop-shadow-md text-center leading-none px-1 ${!isCompatible ? 'text-red-300' : ''}`}>
                          {getGemIcon(SKILL_DATABASE[item.gemDefinitionId || ''])}
                      </span>
+                     {item.type === 'gem' && !isSupport && (
+                         <div className="absolute -bottom-2 bg-black/80 px-1.5 rounded-sm border border-zinc-700 text-[9px] font-mono text-cyan-300">
+                             Lv.{item.level || 1}
+                         </div>
+                     )}
                      {!isCompatible && (
                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-lg border border-red-400">!</div>
                      )}
@@ -707,7 +712,9 @@ export const GameCanvas: React.FC = () => {
                          const hasActive = !!skill.activeGem;
                          let compatible = false;
                          if (hasActive) {
-                             compatible = SkillManager.checkCompatibility(skill.activeGem!.gemDefinitionId!, pendingGem.gemDefinitionId!);
+                             // Pass resolved tags here to check evolution compatibility
+                             const resolved = SkillManager.resolveSkill(skill, engineRef.current!.playerStats);
+                             compatible = SkillManager.checkCompatibility(skill.activeGem!.gemDefinitionId!, pendingGem.gemDefinitionId!, resolved?.tags);
                          }
 
                          return (
@@ -993,7 +1000,9 @@ export const GameCanvas: React.FC = () => {
                                          const activeGem = engineRef.current?.gameState.activeSkills[selectedSlotIndex].activeGem;
                                          let isCompatible = true;
                                          if (g && activeGem) {
-                                            isCompatible = SkillManager.checkCompatibility(activeGem.gemDefinitionId!, g.gemDefinitionId!);
+                                            // Ensure compatibility check uses resolved (evolved) tags
+                                            const resolved = SkillManager.resolveSkill(engineRef.current!.gameState.activeSkills[selectedSlotIndex], engineRef.current!.playerStats);
+                                            isCompatible = SkillManager.checkCompatibility(activeGem.gemDefinitionId!, g.gemDefinitionId!, resolved?.tags);
                                          } else if (g && !activeGem) {
                                             isCompatible = false;
                                          }
@@ -1094,8 +1103,8 @@ export const GameCanvas: React.FC = () => {
                                             borderColor = "border-violet-900/50";
                                             
                                             if (currentActiveGem) {
-                                                const activeDef = SKILL_DATABASE[currentActiveGem.gemDefinitionId!];
-                                                const compatible = SkillManager.checkCompatibility(activeDef.id, def.id);
+                                                const resolved = SkillManager.resolveSkill(engineRef.current!.gameState.activeSkills[selectedSlotIndex], engineRef.current!.playerStats);
+                                                const compatible = SkillManager.checkCompatibility(currentActiveGem.gemDefinitionId!, def.id, resolved?.tags);
                                                 
                                                 if (compatible) {
                                                     borderColor = "border-violet-500";
@@ -1130,6 +1139,12 @@ export const GameCanvas: React.FC = () => {
                                                 <span className="absolute bottom-0.5 right-1 text-[8px] font-bold text-zinc-500/80 tracking-tighter">
                                                     {gem.gemDefinitionId?.substring(0,3).toUpperCase()}
                                                 </span>
+                                                {/* Level Badge in Inventory */}
+                                                {gem.type === 'gem' && def?.type === 'active' && (
+                                                    <div className="absolute top-0.5 left-0.5 px-1 bg-black/60 rounded text-[7px] text-cyan-300 font-mono">
+                                                        Lv.{gem.level || 1}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })
@@ -1279,13 +1294,7 @@ export const GameCanvas: React.FC = () => {
                                     const index = backpackPage * ITEMS_PER_PAGE + i;
                                     const item = filteredBackpack[index];
                                     
-                                    // if (index >= filteredBackpack.length) return null; // No, render placeholders to keep grid stable?
-                                    // Actually rendering empty slots is fine for visual consistency, but for filtered list,
-                                    // usually we just render items.
                                     if (!item) {
-                                        // Only render placeholder if within page bounds but empty? 
-                                        // Or just fill the grid with empties?
-                                        // Let's render empty slot to maintain grid structure for at least one page visual
                                         return <div key={i} className="aspect-square bg-zinc-950 border border-zinc-800 rounded shadow-inner opacity-50"></div>;
                                     }
                                     
@@ -1332,7 +1341,7 @@ export const GameCanvas: React.FC = () => {
                     </div>
                     {tooltip.item.type === 'gem' ? (
                         <div className="text-xs text-zinc-400">
-                             <div className="italic text-[10px] mb-2">{SKILL_DATABASE[tooltip.item.gemDefinitionId!]?.type.toUpperCase()} GEM</div>
+                             <div className="italic text-[10px] mb-2">{SKILL_DATABASE[tooltip.item.gemDefinitionId!]?.type.toUpperCase()} GEM <span className="text-cyan-300 ml-1">Lv.{tooltip.item.level||1}</span></div>
                              {tooltip.incompatible && (
                                  <div className="text-red-500 font-bold text-[10px] mb-2 border border-red-900 bg-red-950/30 p-1 rounded">
                                      ⚠ INVALID SUPPORT
@@ -1372,7 +1381,6 @@ export const GameCanvas: React.FC = () => {
                                 {tooltip.item.affixes.map((affix, i) => {
                                     if (affix.value === 0) return null;
 
-                                    // Implicit Logic: First item (index 0) is implicit for equipment
                                     const isImplicit = i === 0;
                                     
                                     let diffElement = null;
@@ -1399,10 +1407,8 @@ export const GameCanvas: React.FC = () => {
                                     let affixName = affix.name;
                                     
                                     if (isImplicit) {
-                                        // Use specific implicit key
                                         affixName = t(`affix_implicit_${tooltip.item.slot}`, language);
                                     } else {
-                                        // Translate Affix Name
                                         let affixKey = affix.definitionId;
                                         affixKey = affixKey.replace(/^map_/, '').replace(/^prefix_/, '').replace(/^suffix_/, '');
                                         let translated = t(`affix_${affixKey}`, language);
@@ -1459,12 +1465,14 @@ export const GameCanvas: React.FC = () => {
                         let desc = option.description;
 
                         if (option.gemItem && option.gemItem.gemDefinitionId) {
-                            const nameKey = `skill_${option.gemItem.gemDefinitionId}_name`;
-                            const descKey = `skill_${option.gemItem.gemDefinitionId}_desc`;
-                            const tName = t(nameKey as any, language);
-                            const tDesc = t(descKey as any, language);
-                            if (tName !== nameKey) name = tName;
-                            if (tDesc !== descKey) desc = tDesc;
+                            if (!option.isUpgrade) {
+                                const nameKey = `skill_${option.gemItem.gemDefinitionId}_name`;
+                                const descKey = `skill_${option.gemItem.gemDefinitionId}_desc`;
+                                const tName = t(nameKey as any, language);
+                                const tDesc = t(descKey as any, language);
+                                if (tName !== nameKey) name = tName;
+                                if (tDesc !== descKey) desc = tDesc;
+                            }
                         } else {
                             const nameKey = `upg_${option.id}_name`;
                             const descKey = `upg_${option.id}_desc`;
@@ -1474,12 +1482,17 @@ export const GameCanvas: React.FC = () => {
                             if (tDesc !== descKey) desc = tDesc;
                         }
 
+                        // Determine visual style based on if it's an Upgrade or New Skill
+                        const isUpgrade = option.isUpgrade;
+                        const borderColor = isUpgrade ? 'border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'border-zinc-700';
+                        const bgClass = isUpgrade ? 'bg-purple-950/20' : 'bg-zinc-900';
+
                         return (
                         <div 
                             key={i}
                             onClick={() => handleSelectUpgrade(option)}
                             className={`
-                                relative overflow-hidden bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer 
+                                relative overflow-hidden ${bgClass} border ${borderColor} rounded-lg p-4 cursor-pointer 
                                 transition-all hover:-translate-y-1 hover:border-yellow-500 hover:shadow-[0_0_20px_rgba(234,179,8,0.2)] group
                                 flex flex-col items-center text-center gap-2 h-48 justify-center
                             `}
@@ -1488,14 +1501,15 @@ export const GameCanvas: React.FC = () => {
                             <div className={`absolute top-0 left-0 w-full h-1 ${option.color || 'bg-white'}`}></div>
                             
                             {/* Icon / Visual */}
-                            <div className={`w-16 h-16 rounded-full ${option.color?.replace('bg-', 'bg-') || 'bg-zinc-800'} bg-opacity-20 flex items-center justify-center text-3xl mb-2 group-hover:scale-110 transition-transform`}>
+                            <div className={`w-16 h-16 rounded-full ${option.color?.replace('bg-', 'bg-') || 'bg-zinc-800'} bg-opacity-20 flex items-center justify-center text-3xl mb-2 group-hover:scale-110 transition-transform relative`}>
                                 {option.gemItem ? (option.gemItem.type === 'gem' ? '💎' : '📜') : '✨'}
+                                {isUpgrade && <div className="absolute -top-1 -right-1 bg-green-500 text-black text-[9px] font-bold px-1 rounded-full">UP!</div>}
                             </div>
 
                             <h3 className={`font-bold text-lg ${option.gemItem ? 'text-cyan-400' : 'text-zinc-200'}`}>
                                 {name}
                             </h3>
-                            <p className="text-xs text-zinc-400 font-mono leading-tight px-4">
+                            <p className="text-xs text-zinc-400 font-mono leading-tight px-4 whitespace-pre-wrap">
                                 {desc}
                             </p>
                         </div>
