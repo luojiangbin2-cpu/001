@@ -1,5 +1,4 @@
-
-import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag, HitEffect } from "./types";
+import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag } from "./types";
 import { StatsSystem } from "./StatsSystem";
 
 // --- SKILL DATABASE ---
@@ -20,14 +19,7 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             projectileSpread: 0,
             range: 800,
             areaOfEffect: 0
-        },
-        evolutions: [
-            {
-                level: 3,
-                addTags: ['area'],
-                onHitEffects: [{ type: 'explode', params: { radius: 100, damagePct: 0.5 } }]
-            }
-        ]
+        }
     },
     'cyclone': {
         id: 'cyclone',
@@ -58,13 +50,7 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             areaOfEffect: 0,
             range: 280,
             ailmentChance: 1.0
-        },
-        evolutions: [
-            {
-                level: 5,
-                onHitEffects: [{ type: 'explode', params: { radius: 60, damagePct: 0.3 } }]
-            }
-        ]
+        }
     },
     'electro_sphere': {
         id: 'electro_sphere',
@@ -82,8 +68,7 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             areaOfEffect: 80,
             duration: 3.0,
             range: 800
-        },
-        onHitEffects: [{ type: 'shock_wave', params: { radius: 80, damagePct: 0.2 } }]
+        }
     },
     'flame_ring': {
         id: 'flame_ring',
@@ -224,7 +209,7 @@ export class SkillManager {
 
     /**
      * Calculates the final stats of a skill by combining:
-     * 1. Active Skill Base Stats (plus Evolutions)
+     * 1. Active Skill Base Stats
      * 2. Compatible Support Gems (Base + Multipliers)
      * 3. Player Global Stats (StatsSystem) - FILTERED BY TAGS
      */
@@ -252,35 +237,7 @@ export class SkillManager {
             orbit: definition.baseStats.orbit || 0
         };
 
-        const activeTags = [...definition.tags]; // Copy tags to allow modification
-        const finalHitEffects: HitEffect[] = definition.onHitEffects ? [...definition.onHitEffects] : [];
-
-        // Apply Evolutions based on gem level
-        if (definition.evolutions && instance.activeGem.level > 1) {
-            for (const evo of definition.evolutions) {
-                if (instance.activeGem.level >= evo.level) {
-                    // Add Tags
-                    if (evo.addTags) {
-                        for (const t of evo.addTags) {
-                            if (!activeTags.includes(t)) activeTags.push(t);
-                        }
-                    }
-                    // Add Hit Effects
-                    if (evo.onHitEffects) {
-                        finalHitEffects.push(...evo.onHitEffects);
-                    }
-                    // Modify Stats (Additive)
-                    if (evo.statModifiers) {
-                        for (const [key, value] of Object.entries(evo.statModifiers)) {
-                            const k = key as keyof SkillStats;
-                            if (typeof value === 'number') {
-                                finalStats[k] = (finalStats[k] || 0) + value;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        const activeTags = definition.tags; // This is the context for StatsSystem
 
         // 2. Apply Supports
         if (instance.supportGems) {
@@ -290,15 +247,7 @@ export class SkillManager {
                 const supportDef = SKILL_DATABASE[supportGem.gemDefinitionId];
                 if (!supportDef) continue;
 
-                // Use updated activeTags for compatibility check to allow evolved synergies.
-                let isCompatible = false;
-                if (supportDef.type === 'support') {
-                    if (!supportDef.supportedTags || supportDef.supportedTags.length === 0) {
-                        isCompatible = true;
-                    } else {
-                        isCompatible = supportDef.supportedTags.some(tag => activeTags.includes(tag));
-                    }
-                }
+                const isCompatible = SkillManager.checkCompatibility(definition.id, supportDef.id);
                 
                 if (isCompatible) {
                     // Apply Additive Base Stats
@@ -323,33 +272,52 @@ export class SkillManager {
             }
         }
 
-        // 3. Apply Player Global Stats (using the updated activeTags Context)
+        // 3. Apply Player Global Stats (using the Tag Context)
         
+        // Damage Calculation:
+        // We use the player's 'bulletDamage' stat as the global scaler for skill damage.
+        // Base value for player bulletDamage is usually 10 (from GameEngine init).
+        // If player has "+50% Projectile Damage" (and skill is Projectile), getStatValue returns ~15.
+        // 15 / 10 = 1.5x Multiplier.
         const playerGlobalDmg = playerStats.getStatValue('bulletDamage', activeTags);
         const playerDmgRatio = playerGlobalDmg / 10; 
         finalStats.damage *= playerDmgRatio;
 
-        // --- 攻速平衡逻辑 ---
+        // --- 攻速平衡逻辑 Start (New) ---
+        // 1. 获取玩家的总攻速倍率（例如 1.5 代表 +50% 攻速）
         const playerAtkSpdRatio = playerStats.getStatValue('attackSpeed', activeTags);
+
+        // 2. 计算出“额外增加的部分”（例如 1.5 -> 0.5）
         const bonusAtkSpd = Math.max(0, playerAtkSpdRatio - 1);
+
+        // 3. 默认攻速收益系数为 1.0 (100%收益)
         let speedEffectiveness = 1.0;
+
+        // 4. 平衡规则：如果技能带有 'area' 标签且不是 'melee' (近战)
+        // 我们将其视为“大范围法术”，强制将其攻速收益减半 (0.5)，防止后期卡顿和数值崩坏。
         if (activeTags.includes('area') && !activeTags.includes('melee')) {
             speedEffectiveness = 0.5;
         }
-        finalStats.attackRate *= (1 + bonusAtkSpd * speedEffectiveness);
 
+        // 5. 应用修正后的公式：基础攻速 * (1 + 额外攻速 * 收益系数)
+        finalStats.attackRate *= (1 + bonusAtkSpd * speedEffectiveness);
+        // --- 攻速平衡逻辑 End ---
+
+        // Projectile Count: Additive
+        // If stats says "1" (base), we add 0 extra. If stats says "2" (base 1 + 1 extra), we add 1.
         const playerProjCount = playerStats.getStatValue('projectileCount', activeTags); 
         finalStats.projectileCount += (playerProjCount - 1);
         
+        // Ailment Chance
         finalStats.ailmentChance += playerStats.getStatValue('ailmentChance', activeTags);
         
+        // Pierce Count
         finalStats.pierceCount += playerStats.getStatValue('pierceCount', activeTags);
 
         return {
             definition: definition,
             stats: finalStats,
-            tags: activeTags,
-            onHitEffects: finalHitEffects
+            tags: definition.tags
         };
     }
 }
