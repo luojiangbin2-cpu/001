@@ -33,7 +33,8 @@ export type StatKey =
     | 'duration' 
     | 'cooldown'
     | 'attackRate'
-    | 'pierceCount';
+    | 'pierceCount'
+    | 'orbit';
 
 export interface ItemAffixInstance {
     definitionId: string;
@@ -72,6 +73,19 @@ export interface SkillStats {
     orbit: number; // 0 = disabled, 1 = enabled
 }
 
+export interface HitEffect {
+    type: 'explode' | 'shock_wave' | 'summon' | 'chain'; // 效果类型
+    params: any; // 效果参数，例如 { radius: 100, damagePct: 0.5 }
+    chance?: number; // 触发几率 0-1，默认为 1
+}
+
+export interface SkillEvolution {
+    level: number; // 触发等级
+    addTags?: SkillTag[]; // 新增标签
+    statModifiers?: Partial<SkillStats>; // 属性修正
+    onHitEffects?: HitEffect[]; // 新增打击效果
+}
+
 export interface SkillDefinition {
     id: string;
     name: string;
@@ -81,12 +95,15 @@ export interface SkillDefinition {
     description: string;
     baseStats: Partial<SkillStats>;
     statMultipliers?: Partial<SkillStats>;
+    evolutions?: SkillEvolution[];
+    onHitEffects?: HitEffect[];
 }
 
 export interface ResolvedSkill {
     definition: SkillDefinition;
     stats: SkillStats;
     tags: SkillTag[];
+    onHitEffects: HitEffect[];
 }
 
 export interface ActiveSkillInstance {
@@ -175,6 +192,10 @@ export interface Bullet extends Entity {
     orbitAngle?: number;
     orbitRadius?: number;
     initialSpeed?: number;
+    // Hit Effects & Context
+    onHitEffects?: HitEffect[];
+    skillDefinitionId?: string;
+    tags?: SkillTag[];
 }
 
 export interface Loot extends Entity {

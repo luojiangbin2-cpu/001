@@ -1,3 +1,4 @@
+
 export const TRANSLATIONS = {
   en: {
     // UI Buttons
@@ -38,6 +39,15 @@ export const TRANSLATIONS = {
     stat_move_spd: "Movement Speed",
     stat_crit_mult: "Crit Multiplier",
     stat_ailment: "Ailment Chance",
+    
+    // New Stats
+    stat_fire_dmg: "Fire Dmg",
+    stat_cold_dmg: "Cold Dmg",
+    stat_light_dmg: "Light Dmg",
+    stat_aoe: "AoE Size",
+    stat_proj_spd: "Proj Speed",
+    stat_pierce: "Pierce",
+    stat_duration: "Duration",
     
     // Item Types & Rarities
     item_helmet: "Helmet",
@@ -235,6 +245,15 @@ export const TRANSLATIONS = {
     stat_move_spd: "移动速度",
     stat_crit_mult: "暴击加成",
     stat_ailment: "异常几率",
+    
+    // New Stats
+    stat_fire_dmg: "火焰伤害",
+    stat_cold_dmg: "冰霜伤害",
+    stat_light_dmg: "闪电伤害",
+    stat_aoe: "范围效果",
+    stat_proj_spd: "投射物速度",
+    stat_pierce: "穿透数量",
+    stat_duration: "持续时间",
     
     // Item Types & Rarities
     item_helmet: "头盔",

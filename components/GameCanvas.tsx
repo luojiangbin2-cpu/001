@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { UpgradeDefinition, ItemSlot, ItemInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, ItemRarity, SkillDefinition } from '../types';
 import { GameEngine, BACKPACK_CAPACITY, CAMERA_ZOOM } from '../GameEngine';
@@ -883,14 +884,16 @@ export const GameCanvas: React.FC = () => {
                             {selectedMap ? (
                                 <div className="space-y-1">
                                     <h3 className="text-purple-400 font-bold border-b border-purple-900 pb-1 mb-2 text-sm">{selectedMap.name}</h3>
-                                    {selectedMap.affixes.map((affix, i) => (
+                                    {selectedMap.affixes.map((affix, i) => {
+                                        if (affix.value === 0) return null;
+                                        return (
                                         <div key={i} className="text-xs text-zinc-300 flex justify-between">
                                             <span>{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
                                             <span className={affix.value > 0 ? "text-green-400" : "text-red-400"}>
                                                 {Math.round(affix.value * 100)}%
                                             </span>
                                         </div>
-                                    ))}
+                                    )})}
                                 </div>
                             ) : (
                                 <div className="text-zinc-600 text-xs italic text-center mt-6">{t('ui_no_map_selected', language)}</div>
@@ -1164,14 +1167,29 @@ export const GameCanvas: React.FC = () => {
                              <div>
                                 <h3 className="text-zinc-600 text-[10px] font-bold uppercase tracking-wider mb-2">{t('ui_attributes', language)}</h3>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[11px]">
-                                    <StatRow label={t('stat_damage', language)} value={engineRef.current.playerStats.getStatValue('bulletDamage').toFixed(0)} />
-                                    {/* FIX: Ensure UI always displays the HP from synced HUD state to avoid glitches */}
                                     <StatRow label={t('stat_health', language)} value={hudState.maxHp.toFixed(0)} color="text-red-400" />
+                                    <StatRow label={t('stat_fire_dmg', language)} value={engineRef.current.playerStats.getStatValue('bulletDamage', ['fire']).toFixed(0)} color="text-orange-400" />
+                                    <StatRow label={t('stat_cold_dmg', language)} value={engineRef.current.playerStats.getStatValue('bulletDamage', ['cold']).toFixed(0)} color="text-cyan-400" />
+                                    <StatRow label={t('stat_light_dmg', language)} value={engineRef.current.playerStats.getStatValue('bulletDamage', ['lightning']).toFixed(0)} color="text-yellow-400" />
                                     <StatRow label={t('stat_atk_spd', language)} value={engineRef.current.playerStats.getStatValue('attackSpeed').toFixed(2)} />
                                     <StatRow label={t('stat_defense', language)} value={engineRef.current.playerStats.getStatValue('defense').toFixed(0)} color="text-slate-300" />
                                     <StatRow label={t('stat_crit_chance', language)} value={(engineRef.current.playerStats.getStatValue('critChance') * 100).toFixed(0) + '%'} />
-                                    <StatRow label={t('stat_move_spd', language)} value={engineRef.current.playerStats.getStatValue('moveSpeed').toFixed(1)} color="text-blue-400" />
                                     <StatRow label={t('stat_crit_mult', language)} value={'x' + engineRef.current.playerStats.getStatValue('critMultiplier').toFixed(1)} />
+                                    <StatRow label={t('stat_move_spd', language)} value={engineRef.current.playerStats.getStatValue('moveSpeed').toFixed(1)} color="text-blue-400" />
+                                    
+                                    {/* Conditional Stats */}
+                                    {engineRef.current.playerStats.getStatValue('areaOfEffect') > 0 && (
+                                        <StatRow label={t('stat_aoe', language)} value={'+' + (engineRef.current.playerStats.getStatValue('areaOfEffect') * 100).toFixed(0) + '%'} color="text-indigo-400" />
+                                    )}
+                                    {engineRef.current.playerStats.getStatValue('projectileSpeed') > 0 && (
+                                        <StatRow label={t('stat_proj_spd', language)} value={'+' + (engineRef.current.playerStats.getStatValue('projectileSpeed') * 100).toFixed(0) + '%'} color="text-green-400" />
+                                    )}
+                                    {engineRef.current.playerStats.getStatValue('pierceCount') > 0 && (
+                                        <StatRow label={t('stat_pierce', language)} value={engineRef.current.playerStats.getStatValue('pierceCount').toFixed(0)} color="text-emerald-400" />
+                                    )}
+                                    {engineRef.current.playerStats.getStatValue('duration') > 0 && (
+                                        <StatRow label={t('stat_duration', language)} value={'+' + (engineRef.current.playerStats.getStatValue('duration') * 100).toFixed(0) + '%'} color="text-pink-400" />
+                                    )}
                                 </div>
                              </div>
                              <div className="flex flex-col items-end pr-2">
@@ -1331,7 +1349,9 @@ export const GameCanvas: React.FC = () => {
                     ) : tooltip.item.type === 'map' ? (
                         <div className="space-y-1">
                             <div className="text-[10px] text-zinc-500 mb-2 italic">{t('lbl_map_tier', language, {n: tooltip.item.level})}</div>
-                            {tooltip.item.affixes.map((affix, i) => (
+                            {tooltip.item.affixes.map((affix, i) => {
+                                if (affix.value === 0) return null;
+                                return (
                                 <div key={i} className="text-blue-200 text-xs flex justify-between items-start gap-1">
                                     <span className="text-left flex-1">{t(`affix_${affix.definitionId.replace(/^(prefix|suffix|map_prefix|map_suffix)_/, '')}`, language)}</span>
                                     <div className="text-right whitespace-nowrap">
@@ -1340,7 +1360,7 @@ export const GameCanvas: React.FC = () => {
                                         </span>
                                     </div>
                                 </div>
-                            ))}
+                            )})}
                         </div>
                     ) : (
                         <>
@@ -1350,6 +1370,8 @@ export const GameCanvas: React.FC = () => {
                             </div>
                             <div className="space-y-1">
                                 {tooltip.item.affixes.map((affix, i) => {
+                                    if (affix.value === 0) return null;
+
                                     // Implicit Logic: First item (index 0) is implicit for equipment
                                     const isImplicit = i === 0;
                                     
