@@ -70,14 +70,6 @@ export interface SkillStats {
     knockback: number;
     pierceCount: number;
     orbit: number; // 0 = disabled, 1 = enabled
-    moveSpeed?: number; // Added for evolution support
-}
-
-export interface SkillEvolution {
-    level: number;
-    description: string;
-    statsAdded?: Partial<SkillStats>;
-    tagsAdded?: SkillTag[];
 }
 
 export interface SkillDefinition {
@@ -89,7 +81,6 @@ export interface SkillDefinition {
     description: string;
     baseStats: Partial<SkillStats>;
     statMultipliers?: Partial<SkillStats>;
-    evolutions?: SkillEvolution[];
 }
 
 export interface ResolvedSkill {
@@ -115,8 +106,6 @@ export interface UpgradeDefinition {
     type?: UpgradeType;
     tags?: SkillTag[];
     gemItem?: ItemInstance;
-    isUpgrade?: boolean; 
-    nextLevel?: number;
 }
 
 export interface AffixDefinition {
@@ -186,9 +175,6 @@ export interface Bullet extends Entity {
     orbitAngle?: number;
     orbitRadius?: number;
     initialSpeed?: number;
-    // Evolution Props
-    areaOfEffect?: number; // Snapshot of AoE size for explosions
-    tags?: SkillTag[]; // Snapshot of tags to trigger effects
 }
 
 export interface Loot extends Entity {

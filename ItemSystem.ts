@@ -1,4 +1,3 @@
-
 import { ItemSlot, ItemRarity, ItemInstance, AffixDefinition, AffixType, ItemAffixInstance, UpgradeDefinition, SkillDefinition } from './types';
 import { SKILL_DATABASE } from './SkillSystem';
 
@@ -227,7 +226,7 @@ const getImplicitAffix = (slot: ItemSlot, level: number): ItemAffixInstance | nu
         case 'offhand':
             stat = 'defense';
             value = 2 + level * 1;
-            name = 'Block Chance'; 
+            name = 'Block Chance'; // Flavor name
             break;
         case 'body':
             stat = 'maxHp';
@@ -427,15 +426,15 @@ export const createSpecificItem = (slot: ItemSlot, affixId: string): ItemInstanc
     return item;
 }
 
-// Rewritten generateRewards to support Leveling
-export const generateRewards = (level: number, activeGemLevels: Record<string, number>): UpgradeDefinition[] => {
+export const generateRewards = (level: number, excludedActiveGemIds: string[] = []): UpgradeDefinition[] => {
     const rewards: UpgradeDefinition[] = [];
-    const generatedIds = new Set<string>(); 
+    const generatedIds = new Set<string>(); // Tracks stat.id or gemId to prevent duplicates in this batch
     
     const allSkillKeys = Object.keys(SKILL_DATABASE);
     
     // Separate pools
-    const activeSkills = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'active');
+    // Filter out active skills that are in the excluded list (already owned)
+    const activeSkills = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'active' && !excludedActiveGemIds.includes(k));
     const supportSkills = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'support');
 
     let safetyCounter = 0;
@@ -445,11 +444,17 @@ export const generateRewards = (level: number, activeGemLevels: Record<string, n
         
         let selection: 'stat' | 'active' | 'support' = 'stat';
         
-        // Slightly skewed towards stats if we have skills, but balanced
-        if (roll < 0.33) selection = 'stat'; 
-        else if (roll < 0.66) selection = 'active';
-        else selection = 'support'; 
+        // Random selection logic
+        if (roll < 0.33) {
+            selection = 'stat'; 
+        } else if (roll < 0.66) {
+            selection = 'active';
+        } else {
+            selection = 'support'; 
+        }
         
+        // Handle empty pools fallback
+        if (selection === 'active' && activeSkills.length === 0) selection = 'support';
         if (selection === 'support' && supportSkills.length === 0) selection = 'stat';
 
         if (selection === 'stat') {
@@ -461,6 +466,8 @@ export const generateRewards = (level: number, activeGemLevels: Record<string, n
         } else {
             // Gem Selection
             const pool = selection === 'active' ? activeSkills : supportSkills;
+            if (pool.length === 0) continue; // Should have fallen back to stat, but just in case
+            
             const gemId = pool[Math.floor(Math.random() * pool.length)];
             
             if (!generatedIds.has(gemId)) {
@@ -473,40 +480,20 @@ export const generateRewards = (level: number, activeGemLevels: Record<string, n
                 let color = def.type === 'active' ? 'bg-blue-600' : 'bg-zinc-600';
                 const tagsToCheck = [...(def.tags || []), ...(def.supportedTags || [])];
                 
-                if (tagsToCheck.includes('fire')) color = 'bg-orange-600';
-                else if (tagsToCheck.includes('projectile')) color = 'bg-emerald-600';
-                else if (tagsToCheck.includes('cold')) color = 'bg-cyan-600';
-
-                // Check for Upgrade logic
-                const currentLvl = activeGemLevels[gemId];
-                let isUpgrade = false;
-                let displayName = def.name;
-                let displayDesc = def.description;
-                let nextLvl = 1;
-
-                if (currentLvl !== undefined && def.type === 'active') {
-                    isUpgrade = true;
-                    nextLvl = currentLvl + 1;
-                    displayName = `Level Up: ${def.name}`;
-                    
-                    // Check for next evolution description
-                    const evolution = def.evolutions?.find(e => e.level === nextLvl);
-                    if (evolution) {
-                        displayDesc = `★ EVOLUTION: ${evolution.description}`;
-                        color = 'bg-purple-600'; // Special color for evolution
-                    } else {
-                        displayDesc = `Upgrade to Level ${nextLvl}. Damage +2.`;
-                    }
+                if (tagsToCheck.includes('fire')) {
+                    color = 'bg-orange-600';
+                } else if (tagsToCheck.includes('projectile')) {
+                    color = 'bg-emerald-600';
+                } else if (tagsToCheck.includes('cold')) {
+                    color = 'bg-cyan-600';
                 }
 
                 rewards.push({
-                    id: item.id,
-                    name: displayName,
-                    description: displayDesc,
+                    id: item.id, // item.id is uuid() from createGemItem. Gem rewards use UUID for their key.
+                    name: def.name,
+                    description: def.description,
                     color: color,
-                    gemItem: item,
-                    isUpgrade: isUpgrade,
-                    nextLevel: nextLvl
+                    gemItem: item
                 });
             }
         }
@@ -525,6 +512,6 @@ export const createEndlessKey = (): ItemInstance => {
         level: 1,
         affixes: [],
         stackSize: 1,
-        gemDefinitionId: 'map_endless_void' 
+        gemDefinitionId: 'map_endless_void' // Added stable identifier for logic checks
     };
 };
