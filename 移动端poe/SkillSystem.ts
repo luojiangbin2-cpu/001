@@ -1,5 +1,4 @@
 
-
 import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag } from "./types";
 import { StatsSystem } from "./StatsSystem";
 
@@ -21,7 +20,24 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             projectileSpread: 0,
             range: 800,
             areaOfEffect: 0
-        }
+        },
+        evolutions: [
+            {
+                id: 'magma_burst',
+                name: "Magma Burst",
+                description: "Fireballs explode on impact. Adds Area tag.",
+                addTags: ['area'],
+                visualTag: 'explosion',
+                statModifiers: { areaOfEffect: 100 }
+            },
+            {
+                id: 'flame_gatling',
+                name: "Flame Gatling",
+                description: "Fires projectiles rapidly in a line. No spread.",
+                // Using additive logic: +2.0 rate to base 1.5 = 3.5. -6 damage to base 15 = 9.
+                statModifiers: { attackRate: 2.0, damage: -6, projectileSpread: 0, projectileCount: 0 }
+            }
+        ]
     },
     'cyclone': {
         id: 'cyclone',
@@ -175,8 +191,9 @@ export class SkillManager {
     /**
      * Calculates the final stats of a skill by combining:
      * 1. Active Skill Base Stats
-     * 2. Compatible Support Gems (Base + Multipliers)
-     * 3. Player Global Stats (StatsSystem) - FILTERED BY TAGS
+     * 2. Evolution Modifiers (Base + Evo)
+     * 3. Compatible Support Gems (Base + Multipliers)
+     * 4. Player Global Stats (StatsSystem) - FILTERED BY TAGS
      */
     public static resolveSkill(instance: ActiveSkillInstance, playerStats: StatsSystem): ResolvedSkill | null {
         // 0. Check if active gem exists
@@ -198,10 +215,40 @@ export class SkillManager {
             duration: definition.baseStats.duration || 0,
             ailmentChance: 0,
             knockback: definition.baseStats.knockback || 0,
-            pierceCount: definition.baseStats.pierceCount || 0
+            pierceCount: definition.baseStats.pierceCount || 0,
+            orbit: 0
         };
 
-        const activeTags = definition.tags; // This is the context for StatsSystem
+        // Initialize tags based on definition, can be modified by evolution
+        let activeTags = [...definition.tags];
+        let activeVisualTag = undefined;
+
+        // 1.5. Apply Evolution (If exists)
+        if (instance.evolutionId && definition.evolutions) {
+            const evo = definition.evolutions.find(e => e.id === instance.evolutionId);
+            if (evo) {
+                // Update Tags
+                if (evo.addTags) {
+                    activeTags.push(...evo.addTags);
+                }
+                if (evo.removeTags) {
+                    activeTags = activeTags.filter(t => !evo.removeTags!.includes(t));
+                }
+                if (evo.visualTag) {
+                    activeVisualTag = evo.visualTag;
+                }
+
+                // Apply Stat Modifiers (Additive)
+                if (evo.statModifiers) {
+                    for (const key in evo.statModifiers) {
+                        const k = key as keyof SkillStats;
+                        if (evo.statModifiers[k] !== undefined) {
+                            finalStats[k] += evo.statModifiers[k]!;
+                        }
+                    }
+                }
+            }
+        }
 
         // 2. Apply Supports
         if (instance.supportGems) {
@@ -211,7 +258,13 @@ export class SkillManager {
                 const supportDef = SKILL_DATABASE[supportGem.gemDefinitionId];
                 if (!supportDef) continue;
 
-                const isCompatible = SkillManager.checkCompatibility(definition.id, supportDef.id);
+                // Check compatibility using the EVOLVED activeTags
+                let isCompatible = false;
+                if (!supportDef.supportedTags || supportDef.supportedTags.length === 0) {
+                    isCompatible = true;
+                } else {
+                    isCompatible = supportDef.supportedTags.some(tag => activeTags.includes(tag));
+                }
                 
                 if (isCompatible) {
                     // Apply Additive Base Stats
@@ -221,6 +274,7 @@ export class SkillManager {
                         if (supportDef.baseStats.cooldown) finalStats.cooldown += supportDef.baseStats.cooldown;
                         if (supportDef.baseStats.areaOfEffect) finalStats.areaOfEffect += supportDef.baseStats.areaOfEffect;
                         if (supportDef.baseStats.pierceCount) finalStats.pierceCount += supportDef.baseStats.pierceCount;
+                        if (supportDef.baseStats.orbit) finalStats.orbit += supportDef.baseStats.orbit;
                     }
 
                     // Apply Multipliers
@@ -234,13 +288,9 @@ export class SkillManager {
             }
         }
 
-        // 3. Apply Player Global Stats (using the Tag Context)
+        // 3. Apply Player Global Stats (using the Evolved Tag Context)
         
-        // Damage Calculation:
-        // We use the player's 'bulletDamage' stat as the global scaler for skill damage.
-        // Base value for player bulletDamage is usually 10 (from GameEngine init).
-        // If player has "+50% Projectile Damage" (and skill is Projectile), getStatValue returns ~15.
-        // 15 / 10 = 1.5x Multiplier.
+        // Damage Calculation
         const playerGlobalDmg = playerStats.getStatValue('bulletDamage', activeTags);
         const playerDmgRatio = playerGlobalDmg / 10; 
         finalStats.damage *= playerDmgRatio;
@@ -249,7 +299,6 @@ export class SkillManager {
         finalStats.attackRate *= playerAtkSpdRatio;
 
         // Projectile Count: Additive
-        // If stats says "1" (base), we add 0 extra. If stats says "2" (base 1 + 1 extra), we add 1.
         const playerProjCount = playerStats.getStatValue('projectileCount', activeTags); 
         finalStats.projectileCount += (playerProjCount - 1);
         
@@ -262,7 +311,8 @@ export class SkillManager {
         return {
             definition: definition,
             stats: finalStats,
-            tags: definition.tags
+            tags: activeTags,
+            visualTag: activeVisualTag
         };
     }
 }

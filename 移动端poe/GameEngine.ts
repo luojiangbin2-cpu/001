@@ -1,3 +1,4 @@
+
 import { Vector2, JoystickState, GameState, Enemy, Bullet, Entity, Loot, EnemyType, BulletOwner, UpgradeDefinition, StatKey, FloatingText, EnemyModifier, ItemSlot, ItemRarity, ItemInstance, ActiveSkillInstance, ResolvedSkill, MAX_SKILL_SLOTS, Interactable, InteractableType, NPC, DamageType, SkillTag, GroundEffect, GroundEffectType, Particle, XPOrb, XPOrbTier, VisualEffect, MapStats } from './types';
 import { generateItem, generateRewards, createGemItem, createSpecificItem, AFFIX_DATABASE, createEndlessKey } from './ItemSystem';
 import { StatsSystem } from './StatsSystem';
@@ -187,7 +188,7 @@ export class GameEngine {
             active: true,
             type: 'map_device',
             x: 0,
-            y: -200,
+            y: -280,
             width: 80,
             height: 80,
             color: '#c026d3',
@@ -200,8 +201,8 @@ export class GameEngine {
             active: true,
             type: 'merchant',
             name: "Merchant",
-            x: 100,
-            y: -50,
+            x: 160,
+            y: 80,
             width: 50,
             height: 50,
             color: '#22c55e',
@@ -287,8 +288,8 @@ export class GameEngine {
                     active: true,
                     type: 'merchant',
                     name: "Merchant",
-                    x: 100,
-                    y: -50,
+                    x: 160,
+                    y: 80,
                     width: 50,
                     height: 50,
                     color: '#22c55e',
@@ -303,7 +304,7 @@ export class GameEngine {
                         active: true,
                         type: 'map_device',
                         x: 0,
-                        y: -200,
+                        y: -280,
                         width: 80,
                         height: 80,
                         color: '#c026d3',
@@ -510,796 +511,7 @@ export class GameEngine {
         this.joystickState.vector = { x: 0, y: 0 };
     }
 
-    // --- MAP SYSTEM & EXPEDITION LOOP ---
-    
-    public activateMap(mapItem: ItemInstance) {
-        if (mapItem.type !== 'map') return;
-        
-        // Remove map from bag (Simple consumption logic)
-        const idx = this.gameState.backpack.findIndex(i => i.id === mapItem.id);
-        if (idx > -1) {
-             // If stack logic exists later
-             if (mapItem.stackSize && mapItem.stackSize > 1) {
-                 mapItem.stackSize--;
-             } else {
-                 this.gameState.backpack.splice(idx, 1);
-             }
-        }
-        this.callbacks.onInventoryChange();
-
-        // --- Endless Mode Check ---
-        if (mapItem.gemDefinitionId === 'map_endless_void') {
-            this.gameState.isEndlessMode = true;
-            this.gameState.currentFloor = 1;
-            
-            // Endless Mode Initial State: No bonuses, pure baseline
-            this.gameState.currentMapStats = {
-                tier: 1,
-                monsterHealthMult: 1.0,
-                monsterDamageMult: 1.0,
-                packSizeMult: 1.0,
-                xpMult: 1.0,
-                rarityMult: 1.0
-            };
-            
-            this.gameState.targetKills = 50; // Floor 1 target
-            this.callbacks.onNotification("⚔️ ENDLESS MODE STARTED ⚔️");
-
-        } else {
-            // --- Normal Map Logic ---
-            this.gameState.isEndlessMode = false;
-
-            const mapStats: MapStats = {
-                tier: mapItem.level,
-                monsterHealthMult: 1 + (mapItem.level * 0.1), 
-                monsterDamageMult: 1 + (mapItem.level * 0.1),
-                packSizeMult: 1,
-                xpMult: 1 + (mapItem.level * 0.05),
-                rarityMult: 1
-            };
-
-            for (const affix of mapItem.affixes) {
-                const val = affix.value;
-                switch(affix.stat) {
-                    case 'monsterHealth': mapStats.monsterHealthMult += val; mapStats.xpMult += val * 0.5; break;
-                    case 'monsterDamage': mapStats.monsterDamageMult += val; mapStats.xpMult += val * 0.5; break;
-                    case 'monsterPackSize': mapStats.packSizeMult += val; break;
-                    case 'xpGain': mapStats.xpMult += val; break;
-                    case 'itemRarity': mapStats.rarityMult += val; break;
-                }
-            }
-
-            // Rarity Bonuses
-            if (mapItem.rarity === 'magic') { mapStats.rarityMult += 0.2; mapStats.packSizeMult += 0.1; }
-            if (mapItem.rarity === 'rare') { mapStats.rarityMult += 0.5; mapStats.packSizeMult += 0.2; }
-            if (mapItem.rarity === 'unique') { mapStats.rarityMult += 1.0; mapStats.xpMult += 0.5; }
-
-            this.gameState.currentMapStats = mapStats;
-            this.gameState.currentFloor = 1;
-            this.gameState.targetKills = 50 + (1 * 50) + (mapStats.tier * 30); 
-            
-            this.callbacks.onNotification(`Expedition Started: Floor 1`);
-        }
-
-        // --- Common Initialization ---
-        this.gameState.worldState = 'RUN';
-        this.gameState.expeditionActive = true;
-        this.gameState.currentKills = 0;
-        this.gameState.playerWorldPos = { x: 0, y: 0 };
-        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
-        
-        // Clear Entities
-        this.enemies.forEach(e => e.active = false);
-        this.bullets.forEach(b => b.active = false);
-        this.loot.forEach(l => l.active = false);
-        this.xpOrbs.forEach(o => o.active = false);
-        this.gameState.groundEffects = [];
-        this.gameState.interactables = [];
-        this.gameState.npcs = []; 
-        this.gameState.particles = [];
-
-        this.saveGame();
-        this.updateHud();
-    }
-
-    public activateFreeRun() {
-        const freeMap = generateItem('map', 1, 'normal');
-        this.activateMap(freeMap);
-    }
-
-    private enterNextFloor() {
-        this.gameState.currentFloor += 1;
-        this.gameState.currentKills = 0;
-        this.gameState.playerWorldPos = { x: 0, y: 0 };
-        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
-
-        // Clear Entities
-        this.enemies.forEach(e => e.active = false);
-        this.bullets.forEach(b => b.active = false);
-        this.loot.forEach(l => l.active = false); 
-        this.xpOrbs.forEach(o => o.active = false);
-        this.gameState.groundEffects = [];
-        this.gameState.interactables = [];
-        this.gameState.particles = [];
-
-        if (this.gameState.isEndlessMode) {
-            // --- Endless Mode Logic ---
-            const floor = this.gameState.currentFloor;
-            
-            // Infinite Scaling (Additive to preserve previous stacks)
-            this.gameState.currentMapStats.monsterHealthMult += 0.1;
-            this.gameState.currentMapStats.monsterDamageMult += 0.05;
-            this.gameState.currentMapStats.xpMult += 0.05;
-
-            // Environmental Deterioration (Every 5 floors)
-            if (floor % 5 === 0) {
-                 const mapAffixes = AFFIX_DATABASE.filter(a => a.validSlots.includes('map'));
-                 if (mapAffixes.length > 0) {
-                     const affix = mapAffixes[Math.floor(Math.random() * mapAffixes.length)];
-                     // Roll value between min and max
-                     const val = affix.minVal + Math.random() * (affix.maxVal - affix.minVal);
-                     
-                     switch(affix.stat) {
-                        case 'monsterHealth': 
-                            this.gameState.currentMapStats.monsterHealthMult += val; 
-                            // Map mods usually give XP/Quant too
-                            this.gameState.currentMapStats.xpMult += val * 0.5; 
-                            break;
-                        case 'monsterDamage': 
-                            this.gameState.currentMapStats.monsterDamageMult += val; 
-                            this.gameState.currentMapStats.xpMult += val * 0.5; 
-                            break;
-                        case 'monsterPackSize': 
-                            this.gameState.currentMapStats.packSizeMult += val; 
-                            break;
-                        case 'xpGain': 
-                            this.gameState.currentMapStats.xpMult += val; 
-                            break;
-                        case 'itemRarity': 
-                            this.gameState.currentMapStats.rarityMult += val; 
-                            break;
-                     }
-                     
-                     this.callbacks.onNotification("环境恶化：" + affix.name + " (T" + floor + ")");
-                 }
-            }
-
-            // Increase Kill Target
-            this.gameState.targetKills = 50 + (floor * 10);
-
-            this.callbacks.onNotification(`Endless Floor ${floor} (HP x${this.gameState.currentMapStats.monsterHealthMult.toFixed(1)})`);
-        } else {
-            // --- Normal Mode Logic ---
-            this.gameState.currentMapStats.monsterHealthMult *= 1.1; 
-            this.gameState.currentMapStats.monsterDamageMult *= 1.1;
-            
-            // Floor 5 is Boss Floor
-            if (this.gameState.currentFloor === 5) {
-                 this.gameState.targetKills = 1; 
-                 this.spawnEnemy('boss');
-                 this.directorState.bossSpawned = true;
-                 this.callbacks.onNotification(`FLOOR 5: BOSS ENCOUNTER`);
-            } else {
-                 this.gameState.targetKills = 50 + (this.gameState.currentFloor * 50) + (this.gameState.currentMapStats.tier * 30);
-                 this.callbacks.onNotification(`Descended to Floor ${this.gameState.currentFloor}`);
-            }
-        }
-
-        this.saveGame();
-        this.updateHud();
-    }
-
-    private finalizeRun() {
-        this.gameState.worldState = 'HIDEOUT';
-        this.gameState.playerWorldPos = { x: 0, y: 0 };
-        this.currentHp = this.playerStats.getStatValue('maxHp');
-        this.enemies.forEach(e => e.active = false);
-        this.bullets.forEach(b => b.active = false);
-        this.loot.forEach(l => l.active = false);
-        this.xpOrbs.forEach(o => o.active = false);
-        this.gameState.groundEffects = [];
-        this.gameState.particles = [];
-        this.gameState.expeditionActive = false;
-        this.gameState.currentFloor = 0;
-        
-        // ROGUELIKE RESET
-        this.gameState.activeSkills = [
-            createEmptySkillSlot(0), createEmptySkillSlot(1),
-            createEmptySkillSlot(2), createEmptySkillSlot(3)
-        ];
-        this.gameState.gemInventory = [];
-        this.gameState.level = 1;
-        this.gameState.xp = 0;
-        this.gameState.nextLevelXp = BASE_XP_TO_LEVEL;
-        this.chosenUpgrades = [];
-        this.recalculateStats();
-        this.currentHp = this.playerStats.getStatValue('maxHp'); 
-
-        // Setup Hideout
-        const mapDevice: Interactable = {
-            id: 999,
-            active: true,
-            type: 'map_device',
-            x: 0,
-            y: -200,
-            width: 80,
-            height: 80,
-            color: '#c026d3',
-            interactionRadius: 100,
-            label: 'Map Device'
-        };
-        const merchant: NPC = {
-            id: 888,
-            active: true,
-            type: 'merchant',
-            name: "Merchant",
-            x: 100,
-            y: -50,
-            width: 50,
-            height: 50,
-            color: '#22c55e',
-            interactionRadius: 80
-        };
-        this.gameState.interactables = [mapDevice];
-        this.gameState.npcs = [merchant];
-
-        this.callbacks.onNotification("Run Complete - Character Reset");
-        this.saveGame();
-        this.updateHud();
-        this.callbacks.onInventoryChange();
-    }
-    
-    public returnToHideout() {
-        this.finalizeRun();
-    }
-
-    // --- ITEM & STAT SYSTEM ---
-
-    public sellBatch(mode: 'normal' | 'magic' | 'rare' | 'all_junk') {
-        const backpack = this.gameState.backpack;
-        let itemsToSell: ItemInstance[] = [];
-
-        if (mode === 'all_junk') {
-            itemsToSell = backpack.filter(i => (i.rarity === 'normal' || i.rarity === 'magic') && i.type === 'equipment');
-        } else {
-            itemsToSell = backpack.filter(i => i.rarity === mode && i.type === 'equipment');
-        }
-
-        if (itemsToSell.length === 0) {
-            this.callbacks.onNotification("No matching equipment to sell.");
-            return;
-        }
-
-        let totalValue = 0;
-        const PRICES: Record<string, number> = { normal: 5, magic: 10, rare: 20, unique: 50 };
-
-        itemsToSell.forEach(item => {
-            totalValue += PRICES[item.rarity] || 1;
-        });
-
-        // Remove sold items
-        this.gameState.backpack = this.gameState.backpack.filter(i => !itemsToSell.includes(i));
-        this.gameState.gold += totalValue;
-
-        this.callbacks.onNotification(`Sold ${itemsToSell.length} items for ${totalValue} Gold`);
-        this.callbacks.onInventoryChange();
-        this.updateHud();
-        this.saveGame();
-    }
-
-    public sellSingleItem(item: ItemInstance) {
-        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
-        if (backpackIndex === -1) return;
-
-        let price = 0;
-        switch (item.rarity) {
-            case 'normal': price = 5; break;
-            case 'magic': price = 10; break;
-            case 'rare': price = 20; break;
-            case 'unique': price = 100; break;
-        }
-
-        this.gameState.backpack.splice(backpackIndex, 1);
-        this.gameState.gold += price;
-
-        this.callbacks.onNotification(`Sold ${item.name} for ${price} Gold`);
-        this.callbacks.onInventoryChange();
-        this.updateHud();
-        this.saveGame();
-    }
-
-    private recalculateStats() {
-        this.playerStats.reset();
-        
-        const level = this.gameState.level;
-
-        this.playerStats.setBase('moveSpeed', 3.0);
-        this.playerStats.setBase('attackSpeed', 1.0);
-        
-        // Base Damage = 10 + (Current Level * 2)
-        this.playerStats.setBase('bulletDamage', 10 + (level * 2));
-        
-        this.playerStats.setBase('projectileCount', 1);
-        this.playerStats.setBase('projectileSpread', 15);
-        
-        // Base HP = 100 + (Current Level * 10)
-        this.playerStats.setBase('maxHp', 100 + (level * 10));
-        
-        this.playerStats.setBase('hpRegen', 0);
-        this.playerStats.setBase('critChance', 0.05);
-        this.playerStats.setBase('critMultiplier', 1.5);
-        this.playerStats.setBase('defense', 0);
-        // Base Ailment Chance = 15%
-        this.playerStats.setBase('ailmentChance', 0.15);
-  
-        for (const upg of this.chosenUpgrades) {
-            if (upg.stat && upg.type && upg.value) {
-                this.playerStats.addModifier(upg.stat, upg.type, upg.value, upg.tags);
-            }
-        }
-  
-        const equipment = this.gameState.equipment;
-        Object.keys(equipment).forEach((key) => {
-            const slot = key as ItemSlot;
-            const item = equipment[slot];
-            if (!item) return;
-  
-            for (const affix of item.affixes) {
-                if (['monsterHealth', 'monsterDamage', 'monsterPackSize'].includes(affix.stat)) continue;
-                this.playerStats.addModifier(affix.stat as StatKey, affix.valueType, affix.value, affix.tags);
-            }
-        });
-
-        // --- HP SYNC FIX ---
-        const finalMaxHp = this.playerStats.getStatValue('maxHp');
-        // Cap current health to new max health to prevent overflow
-        if (this.currentHp > finalMaxHp) {
-            this.currentHp = finalMaxHp;
-        }
-
-        // Notify UI immediately to update stats panel and HUD
-        this.updateHud(); 
-        this.callbacks.onInventoryChange();
-    }
-
-    public equipItem(item: ItemInstance) {
-        if (item.type === 'gem' || item.type === 'map') return; 
-
-        // Smart Ring Logic: Auto-target empty slot or default to ring1
-        if (item.slot === 'ring1' || item.slot === 'ring2') {
-             if (!this.gameState.equipment.ring1) {
-                 item.slot = 'ring1';
-             } else if (!this.gameState.equipment.ring2) {
-                 item.slot = 'ring2';
-             } else {
-                 item.slot = 'ring1'; // Default replace ring1
-             }
-        }
-
-        const currentEquipped = this.gameState.equipment[item.slot as ItemSlot];
-        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
-        if (backpackIndex > -1) {
-            this.gameState.backpack.splice(backpackIndex, 1);
-        }
-        if (currentEquipped) {
-            this.gameState.backpack.push(currentEquipped);
-        }
-        this.gameState.equipment[item.slot as ItemSlot] = item;
-        this.recalculateStats(); 
-        this.saveGame();
-        // onInventoryChange called inside recalculateStats now, but safe to call again or remove
-        // Leaving it here ensures flow is clear
-    }
-
-    public unequipItem(slot: ItemSlot) {
-        if (slot === 'gem' as any) return; 
-        const item = this.gameState.equipment[slot];
-        if (!item) return;
-        if (this.gameState.backpack.length >= BACKPACK_CAPACITY) {
-            this.callbacks.onNotification("Backpack Full!");
-            return;
-        }
-        this.gameState.backpack.push(item);
-        this.gameState.equipment[slot] = null;
-        this.recalculateStats(); 
-        this.saveGame();
-    }
-
-    // --- GEM MANAGEMENT ---
-
-    public equipGem(gemItem: ItemInstance, skillIndex: number, isSupport: boolean, subSlotIndex: number = -1) {
-        const activeSkill = this.gameState.activeSkills[skillIndex];
-        if (!activeSkill) return;
-
-        const gemDef = SKILL_DATABASE[gemItem.gemDefinitionId || ''];
-        if (!gemDef) return;
-
-        if (isSupport) {
-            if (gemDef.type !== 'support') {
-                this.callbacks.onNotification("Must be Support Gem!");
-                return;
-            }
-            if (!activeSkill.activeGem) {
-                this.callbacks.onNotification("Active Skill Required!");
-                return;
-            }
-            if (!SkillManager.checkCompatibility(activeSkill.activeGem.gemDefinitionId!, gemItem.gemDefinitionId!)) {
-                this.callbacks.onNotification("Incompatible Gem Tags!");
-                return;
-            }
-        } else {
-            if (gemDef.type !== 'active') {
-                this.callbacks.onNotification("Must be Active Gem!");
-                return;
-            }
-        }
-
-        let targetSubSlot = subSlotIndex;
-        if (isSupport && targetSubSlot === -1) {
-            targetSubSlot = activeSkill.supportGems.findIndex(g => g === null);
-            if (targetSubSlot === -1) targetSubSlot = 0; 
-        }
-
-        if (isSupport && gemItem.gemDefinitionId) {
-             const isDuplicate = activeSkill.supportGems.some((existingGem, idx) => {
-                 if (idx === targetSubSlot) return false;
-                 if (!existingGem) return false;
-                 return existingGem.gemDefinitionId === gemItem.gemDefinitionId;
-             });
-
-             if (isDuplicate) {
-                 this.callbacks.onNotification("Cannot stack identical Support Gems.");
-                 return;
-             }
-        }
-
-        const invIndex = this.gameState.gemInventory.findIndex(i => i.id === gemItem.id);
-        if (invIndex > -1) this.gameState.gemInventory.splice(invIndex, 1);
-
-        let existingItem: ItemInstance | null = null;
-        if (isSupport) {
-            existingItem = activeSkill.supportGems[targetSubSlot];
-            activeSkill.supportGems[targetSubSlot] = gemItem;
-        } else {
-            existingItem = activeSkill.activeGem;
-            activeSkill.activeGem = gemItem;
-            activeSkill.cooldownTimer = 0; 
-        }
-
-        if (existingItem) {
-            this.gameState.gemInventory.push(existingItem);
-        }
-        
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public unequipGem(skillIndex: number, isSupport: boolean, subSlotIndex: number) {
-        const activeSkill = this.gameState.activeSkills[skillIndex];
-        if (!activeSkill) return;
-
-        let itemToUnequip: ItemInstance | null = null;
-        if (isSupport) {
-            itemToUnequip = activeSkill.supportGems[subSlotIndex];
-            activeSkill.supportGems[subSlotIndex] = null;
-        } else {
-            itemToUnequip = activeSkill.activeGem;
-            activeSkill.activeGem = null;
-        }
-
-        if (itemToUnequip) {
-            this.gameState.gemInventory.push(itemToUnequip);
-        }
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public equipSupportToSkill(skillIndex: number) {
-        if (!this.gameState.pendingSupportGem) return;
-        
-        const skill = this.gameState.activeSkills[skillIndex];
-        const gem = this.gameState.pendingSupportGem;
-        
-        let emptySlot = skill.supportGems.findIndex(g => g === null);
-        if (emptySlot === -1) emptySlot = 0; 
-
-        const isDuplicate = skill.supportGems.some((existingGem, idx) => {
-             if (idx === emptySlot && skill.supportGems[idx] === null) return false; 
-             if (idx === emptySlot) return false; 
-             if (!existingGem) return false;
-             return existingGem.gemDefinitionId === gem.gemDefinitionId;
-        });
-
-        if (isDuplicate) {
-             this.callbacks.onNotification("Cannot stack identical Support Gems.");
-             return;
-        }
-
-        skill.supportGems[emptySlot] = gem;
-        this.gameState.pendingSupportGem = null;
-        this.gameState.isSelectingSupport = false;
-        this.gameState.isPaused = false;
-        this.gameState.lastFrameTime = performance.now();
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public stashPendingSupportGem() {
-        if (!this.gameState.pendingSupportGem) return;
-        this.gameState.gemInventory.push(this.gameState.pendingSupportGem);
-        this.callbacks.onNotification("Gem moved to Pouch");
-        this.gameState.pendingSupportGem = null;
-        this.gameState.isSelectingSupport = false;
-        this.gameState.isPaused = false;
-        this.gameState.lastFrameTime = performance.now();
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public cancelSupportSelection() {
-        this.gameState.pendingSupportGem = null;
-        this.gameState.isSelectingSupport = false;
-        // Do not modify isPaused state, because the player is still in the level up screen
-        this.saveGame();
-        this.callbacks.onInventoryChange();
-    }
-
-    public selectUpgrade(upgrade: UpgradeDefinition) {
-        if (upgrade.gemItem) {
-            const gemDef = SKILL_DATABASE[upgrade.gemItem.gemDefinitionId!];
-            if (gemDef.type === 'active') {
-                const emptyIndex = this.gameState.activeSkills.findIndex(s => s.activeGem === null);
-                if (emptyIndex !== -1) {
-                    this.gameState.activeSkills[emptyIndex].activeGem = upgrade.gemItem;
-                    this.gameState.activeSkills[emptyIndex].cooldownTimer = 0;
-                    this.callbacks.onNotification(`Learned ${gemDef.name}!`);
-                } else {
-                    this.gameState.gemInventory.push(upgrade.gemItem);
-                    this.callbacks.onNotification(`${gemDef.name} added to Bag`);
-                }
-            } else if (gemDef.type === 'support') {
-                const hasActiveSkill = this.gameState.activeSkills.some(s => s.activeGem !== null);
-                if (hasActiveSkill) {
-                    this.gameState.pendingSupportGem = upgrade.gemItem;
-                    this.gameState.isSelectingSupport = true;
-                    return; 
-                } else {
-                    this.gameState.gemInventory.push(upgrade.gemItem);
-                    this.callbacks.onNotification(`Stashed ${gemDef.name} (No Active Skills)`);
-                }
-            }
-        } else {
-            this.chosenUpgrades.push(upgrade);
-            if (upgrade.stat === 'maxHp' && upgrade.value) {
-                this.currentHp += upgrade.value; 
-            }
-            this.recalculateStats();
-        }
-
-        this.gameState.level += 1;
-        this.gameState.xp -= this.gameState.nextLevelXp;
-        // Steep XP Curve: 150 * (1.25 ^ (Level - 1))
-        this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
-        
-        this.gameState.isPaused = false;
-        this.gameState.lastFrameTime = performance.now();
-        
-        this.saveGame();
-        this.updateHud();
-    }
-
-    private triggerLevelUp() {
-        this.gameState.isPaused = true;
-        const ownedActiveGemIds: string[] = [];
-        
-        this.gameState.activeSkills.forEach(s => {
-            if (s.activeGem && s.activeGem.gemDefinitionId) {
-                ownedActiveGemIds.push(s.activeGem.gemDefinitionId);
-            }
-        });
-
-        this.gameState.gemInventory.forEach(item => {
-            if (item.gemDefinitionId) {
-                const def = SKILL_DATABASE[item.gemDefinitionId];
-                if (def && def.type === 'active') {
-                    ownedActiveGemIds.push(item.gemDefinitionId);
-                }
-            }
-        });
-
-        const options = generateRewards(this.gameState.level, ownedActiveGemIds);
-        this.callbacks.onLevelUp(options);
-    }
-
-    private gainXp(amount: number) {
-        // Level Gap Penalty Logic
-        let penaltyMultiplier = 1.0;
-        // Default Tier 1 if hideout or unknown
-        const mapTier = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1; 
-        const playerLevel = this.gameState.level;
-        
-        // If Player is significantly higher than map tier
-        if (playerLevel > mapTier + 3) {
-            // Severe Penalty: (MapTier / PlayerLevel) ^ 4
-            penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
-        }
-
-        // Apply Stats Multiplier (Wisdom, etc)
-        const xpMult = this.playerStats.getStatValue('xpGain');
-
-        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier * xpMult));
-        
-        this.gameState.xp += effectiveXp;
-        if (this.gameState.xp >= this.gameState.nextLevelXp) {
-            this.triggerLevelUp();
-        } else {
-            this.updateHud();
-        }
-    }
-
-    private spawnXPOrb(x: number, y: number, value: number) {
-        const orb = this.xpOrbs.find(o => !o.active);
-        if (orb) {
-            orb.active = true;
-            orb.x = x + (Math.random() - 0.5) * 20;
-            orb.y = y + (Math.random() - 0.5) * 20;
-            orb.value = value;
-            orb.magnetized = false;
-            
-            // Tier Logic
-            if (value >= 500) orb.tier = 'gold';
-            else if (value >= 150) orb.tier = 'pink';
-            else if (value >= 50) orb.tier = 'purple';
-            else orb.tier = 'blue';
-        }
-    }
-
-    // --- GAMEPLAY HELPERS ---
-
-    private checkCollision(rect1: Entity, rect2: Entity) {
-        return (rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y);
-    }
-
-    private spawnLoot(x: number, y: number, force = false, chanceOverride?: number) {
-        // Base probability calculation: 2% by default
-        let finalChance = chanceOverride ?? LOOT_CHANCE;
-        
-        if (this.gameState.worldState === 'RUN') {
-            // Scale chance by map rarity multiplier (Base 1 + bonuses)
-            finalChance *= this.gameState.currentMapStats.rarityMult; 
-        }
-
-        if (!force && Math.random() > finalChance) return;
-        
-        const loot = this.loot.find(l => !l.active);
-        if (loot) {
-            const roll = Math.random();
-            let rarity: ItemRarity = 'normal';
-            const rarityBoost = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.rarityMult : 1;
-            
-            // REMOVED UNIQUE DROP LOGIC
-            // if (roll > 0.95 / rarityBoost) rarity = 'unique'; 
-            if (roll > 0.85 / rarityBoost) rarity = 'rare';
-            else if (roll > 0.6 / rarityBoost) rarity = 'magic';
-
-            const iLvl = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1;
-            const item = generateItem('random', iLvl, rarity);
-
-            loot.active = true;
-            loot.x = x;
-            loot.y = y;
-            loot.lifeTime = 60; 
-            loot.itemData = item;
-            loot.rarity = rarity;
-            loot.autoCollectRadius = 50; 
-        }
-    }
-  
-    private spawnFloatingText(x: number, y: number, text: string, color: string = 'white', scale: number = 1.0) {
-        const textObj = this.floatingTexts.find(t => !t.active);
-        if (textObj) {
-            textObj.active = true;
-            textObj.x = x + Math.random() * 20 - 10;
-            textObj.y = y;
-            textObj.text = text;
-            textObj.lifeTime = FLOATING_TEXT_LIFETIME;
-            textObj.velocityY = FLOATING_TEXT_SPEED;
-            textObj.color = color;
-            textObj.scale = scale;
-        }
-    }
-  
-    private triggerShake(duration: number = 0.3) {
-        this.gameState.shakeTimer = duration;
-    }
-
-    private spawnEnemy(type: EnemyType) {
-        if (!this.canvas) return;
-        const enemy = this.enemies.find(e => !e.active);
-        if (!enemy) return; 
-    
-        const canvasWidth = this.canvas.width;
-        const canvasHeight = this.canvas.height;
-
-        const angle = Math.random() * Math.PI * 2;
-        const viewportRadius = Math.sqrt(Math.pow(canvasWidth / CAMERA_ZOOM / 2, 2) + Math.pow(canvasHeight / CAMERA_ZOOM / 2, 2));
-        const radius = viewportRadius + 100;
-        
-        const stats = ENEMY_STATS[type];
-        const mapStats = this.gameState.currentMapStats;
-    
-        const isElite = Math.random() < 0.05 && type !== 'boss'; 
-        enemy.active = true;
-        enemy.type = type;
-        enemy.isElite = isElite;
-        enemy.knockbackVelocity = { x: 0, y: 0 };
-        
-        const hpMult = isElite ? 2.0 : 1.0;
-        const sizeMult = isElite ? 1.2 : 1.0;
-        
-        enemy.width = stats.size * sizeMult;
-        enemy.height = stats.size * sizeMult;
-        
-        enemy.hp = stats.hp * mapStats.monsterHealthMult * hpMult;
-        enemy.maxHp = enemy.hp;
-        enemy.speed = stats.speed;
-        
-        // Modifiers Logic
-        enemy.modifiers = [];
-        enemy.resistances = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
-        enemy.statuses = {}; // Reset statuses
-
-        // Reset timers
-        enemy.trailTimer = 0;
-        enemy.blastTimer = 0;
-
-        if (isElite || (type === 'boss') || this.gameState.currentFloor >= 3) {
-            // Chance to add random modifiers
-            const modCount = type === 'boss' ? 3 : isElite ? 2 : 1;
-            
-            for(let i=0; i<modCount; i++) {
-                if (Math.random() < 0.7) {
-                    const mod = ENEMY_MODIFIERS[Math.floor(Math.random() * ENEMY_MODIFIERS.length)];
-                    if (!enemy.modifiers.includes(mod)) {
-                        enemy.modifiers.push(mod);
-                        
-                        // Apply Stat changes immediately
-                        if (mod === 'fire_res') enemy.resistances.fire = 0.5;
-                        if (mod === 'cold_res') enemy.resistances.cold = 0.5;
-                        if (mod === 'lightning_res') enemy.resistances.lightning = 0.5;
-                        if (mod === 'chaos_res') enemy.resistances.chaos = 0.5;
-
-                        // Temporal Bubble spawn logic
-                        if (mod === 'temporal') {
-                            this.gameState.groundEffects.push({
-                                id: uuid(),
-                                x: enemy.x + enemy.width/2,
-                                y: enemy.y + enemy.height/2,
-                                radius: 250,
-                                type: 'bubble',
-                                duration: 99999, // Permanent until death
-                                sourceId: enemy.id
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        
-        enemy.x = this.gameState.playerWorldPos.x + Math.cos(angle) * radius;
-        enemy.y = this.gameState.playerWorldPos.y + Math.sin(angle) * radius;
-    
-        if (type === 'boss') {
-            // Increased Attack Delay: Boss 2.0 -> 2.4
-            enemy.attackTimer = 2.4;
-            this.callbacks.onNotification("BOSS SPAWNED!");
-        } else {
-            // Ensure non-bosses don't have an attack timer
-            enemy.attackTimer = undefined;
-        }
-    }
-
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0) {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0, behavior: 'normal' | 'orbit' = 'normal', areaOfEffect: number = 0) {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -1317,6 +529,17 @@ export class GameEngine {
         bullet.damage = damage;
         bullet.pierce = pierce;
         bullet.ailmentChance = ailmentChance;
+        bullet.areaOfEffect = areaOfEffect; // Capture AOE
+        
+        // Orbit Logic
+        bullet.behavior = behavior;
+        if (behavior === 'orbit') {
+            bullet.orbitAngle = angle;
+            bullet.orbitRadius = 120; // Fixed orbit radius
+            bullet.initialSpeed = speed; // Use projectile speed to determine angular speed
+            bullet.vx = 0; // Override velocity
+            bullet.vy = 0;
+        }
     }
 
     // --- SKILL CASTING SYSTEM ---
@@ -1335,6 +558,48 @@ export class GameEngine {
         const dmgType = this.getDamageTypeFromTags(skill.tags);
 
         // Slow affects cooldown, but visually impacts projectile speed slightly? No, standard logic keeps speed constant.
+
+        // --- BLIZZARD LOGIC (New Nova) ---
+        if (skill.definition.id === 'nova') {
+             // 1. Filter enemies in range
+             const validEnemies = this.enemies.filter(e => {
+                 if (!e.active) return false;
+                 const dist = Math.sqrt((e.x + e.width/2 - px)**2 + (e.y + e.height/2 - py)**2);
+                 return dist < (skill.stats.range || 450);
+             });
+
+             // 2. Randomly select targets
+             const targetCount = Math.floor(skill.stats.projectileCount);
+             const targets: Enemy[] = [];
+             
+             // Simple random selection
+             const pool = [...validEnemies];
+             for (let i = 0; i < targetCount; i++) {
+                 if (pool.length === 0) break;
+                 const idx = Math.floor(Math.random() * pool.length);
+                 targets.push(pool[idx]);
+                 pool.splice(idx, 1); // Remove selected to prevent duplicate hits
+             }
+
+             // 3. Apply Damage and Effect
+             targets.forEach(e => {
+                 this.applySkillDamage(e, skill, dmgType);
+                 
+                 // Spawn Ice Shard effect
+                 this.visualEffects.push({
+                     id: Math.random(),
+                     active: true,
+                     type: 'falling_ice',
+                     x: e.x + e.width/2, // Target center X
+                     y: e.y + e.height/2 + 20, // Target feet Y (corrected downwards)
+                     lifeTime: 0.35, // Fast drop
+                     maxLifeTime: 0.35,
+                     color: '#bae6fd' 
+                 });
+             });
+             
+             return; // End processing, do not execute projectile/area logic below
+        }
         
         if (skill.definition.id === 'cyclone') {
             const radius = skill.stats.areaOfEffect;
@@ -1458,11 +723,22 @@ export class GameEngine {
 
             const spreadRad = skill.stats.projectileSpread * (Math.PI / 180);
             const startAngle = baseAngle - ((safeCount - 1) * spreadRad) / 2;
-            const size = 15;
+            const size = skill.definition.id === 'electro_sphere' ? 30 : 15;
             const color = skill.definition.id === 'fireball' ? '#f97316' : '#60a5fa';
+            
+            const isOrbit = skill.stats.orbit > 0;
 
             for (let i = 0; i < safeCount; i++) {
-                this.spawnBullet(px, py, (safeCount > 1 ? startAngle + i * spreadRad : baseAngle), 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance);
+                let angle = 0;
+                if (isOrbit) {
+                    // 360 degree uniform distribution for orbit
+                    angle = baseAngle + (Math.PI * 2 * i) / safeCount;
+                } else {
+                    // Standard spread
+                    angle = (safeCount > 1 ? startAngle + i * spreadRad : baseAngle);
+                }
+                
+                this.spawnBullet(px, py, angle, 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance, isOrbit ? 'orbit' : 'normal', skill.stats.areaOfEffect);
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -2115,6 +1391,74 @@ export class GameEngine {
             // Determine if stunned/knocked back
             const isKnockedBack = enemy.knockbackVelocity && (Math.abs(enemy.knockbackVelocity.x) > 10 || Math.abs(enemy.knockbackVelocity.y) > 10);
 
+            // --- BOSS AI START ---
+            if (enemy.type === 'boss') {
+                // 阶段转换检测
+                if (enemy.bossState === 'phase1' && enemy.hp < (enemy.maxHp || 1) * 0.5) {
+                    enemy.bossState = 'phase2';
+                    enemy.color = '#ef4444'; // 变红
+                    enemy.width *= 1.2; enemy.height *= 1.2; // 变大
+                    enemy.speed *= 1.3; // 加速
+                    this.callbacks.onNotification("🔥 BOSS ENRAGED! 🔥");
+                    this.triggerShake(0.5);
+                }
+
+                // 技能循环
+                enemy.skillTimer = (enemy.skillTimer || 0) - dt;
+                if (enemy.skillType) {
+                    // 正在释放技能中，停止移动
+                    enemy.skillDuration = (enemy.skillDuration || 0) - dt;
+                    if (enemy.skillType === 'spiral') {
+                        // 螺旋弹幕逻辑：每帧发射旋转子弹
+                        if (Math.random() < 0.3) { // 限制发射频率
+                            const angle = (Date.now() / 200) % (Math.PI * 2);
+                            for(let k=0; k<4; k++) { // 4个方向
+                                this.spawnBullet(enemy.x + enemy.width/2, enemy.y + enemy.height/2, angle + k*(Math.PI/2), 'enemy', 200, 15, '#a855f7', 'lightning', 15);
+                            }
+                        }
+                    }
+                    
+                    if (enemy.skillDuration <= 0) {
+                        enemy.skillType = undefined; // 技能结束
+                        enemy.skillTimer = enemy.bossState === 'phase2' ? 1.5 : 3.0; // 狂暴后CD更短
+                    }
+                    continue; // 跳过移动逻辑，站桩施法
+                } 
+                else if ((enemy.skillTimer || 0) <= 0) {
+                    // 随机选择技能
+                    const rand = Math.random();
+                    if (enemy.bossState === 'phase1') {
+                        if (rand < 0.6) { // 60% 螺旋弹幕
+                            enemy.skillType = 'spiral';
+                            enemy.skillDuration = 2.0;
+                            this.spawnFloatingText(enemy.x, enemy.y, "SPIRAL!", "#a855f7");
+                        } else { // 40% 召唤小弟
+                            enemy.skillType = 'summon';
+                            enemy.skillDuration = 0.5;
+                            this.spawnEnemy('fast'); this.spawnEnemy('fast');
+                            this.spawnFloatingText(enemy.x, enemy.y, "MINIONS!", "#ef4444");
+                        }
+                    } else {
+                        // Phase 2
+                        if (rand < 0.5) { // 50% 螺旋弹幕 (更快)
+                            enemy.skillType = 'spiral';
+                            enemy.skillDuration = 1.5;
+                        } else { // 50% 毁灭打击 (玩家脚下生成红圈)
+                            enemy.skillType = 'blast';
+                            enemy.skillDuration = 0.5; // 施法动作快
+                            const px = this.gameState.playerWorldPos.x + 20;
+                            const py = this.gameState.playerWorldPos.y + 20;
+                            this.gameState.groundEffects.push({
+                                    id: Math.random().toString(),
+                                    x: px, y: py, radius: 100, type: 'blast_warning', duration: 1.5, damageType: 'fire'
+                            });
+                            this.spawnFloatingText(enemy.x, enemy.y, "DOOM!", "#ef4444", 1.5);
+                        }
+                    }
+                }
+            }
+            // --- BOSS AI END ---
+
             // STATUS UPDATE LOGIC
             // Ignited: DoT
             if (enemy.statuses['ignited']) {
@@ -2194,7 +1538,7 @@ export class GameEngine {
             }
 
             // MOVEMENT LOGIC (Only if not stunned by knockback)
-            if (!isKnockedBack) {
+            if (!isKnockedBack && !enemy.skillType) {
                 const cx = enemy.x + enemy.width/2;
                 const cy = enemy.y + enemy.height/2;
                 const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
@@ -2278,9 +1622,28 @@ export class GameEngine {
 
         for (const b of this.bullets) {
             if (!b.active) continue;
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
-            b.lifeTime -= dt;
+            
+            // --- ORBIT LOGIC ---
+            if (b.behavior === 'orbit' && b.owner === 'player') {
+                // Angular Speed = Linear Speed / Radius
+                const angularSpeed = (b.initialSpeed || 200) / (b.orbitRadius || 120);
+                b.orbitAngle = (b.orbitAngle || 0) + angularSpeed * dt;
+                
+                const px = this.gameState.playerWorldPos.x + PLAYER_SIZE/2;
+                const py = this.gameState.playerWorldPos.y + PLAYER_SIZE/2;
+                
+                // Force Position
+                b.x = px + Math.cos(b.orbitAngle) * (b.orbitRadius || 120) - b.width/2;
+                b.y = py + Math.sin(b.orbitAngle) * (b.orbitRadius || 120) - b.height/2;
+                
+                b.lifeTime -= dt; 
+            } else {
+                // Standard Linear Movement
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.lifeTime -= dt;
+            }
+
             if (b.lifeTime <= 0) { b.active = false; continue; }
 
             // --- FIREBALL TRAIL PARTICLES ---
@@ -2340,6 +1703,61 @@ export class GameEngine {
 
                         this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
                         
+                        // AOE LOGIC (Evolution Support)
+                        if (b.areaOfEffect && b.areaOfEffect > 0) {
+                             const radius = b.areaOfEffect;
+                             // Visual
+                             this.visualEffects.push({
+                                 id: Math.random(),
+                                 active: true,
+                                 type: 'hit', // or explosion
+                                 x: e.x + e.width/2,
+                                 y: e.y + e.height/2,
+                                 radius: radius,
+                                 lifeTime: 0.2,
+                                 maxLifeTime: 0.2,
+                                 color: b.damageType === 'fire' ? '#f97316' : '#22d3ee'
+                             });
+                             // Damage neighbors
+                             for (const other of this.enemies) {
+                                 if (!other.active || other.id === e.id) continue;
+                                 const ox = other.x + other.width/2;
+                                 const oy = other.y + other.height/2;
+                                 const dist = Math.sqrt((ox - (e.x+e.width/2))**2 + (oy - (e.y+e.height/2))**2);
+                                 if (dist < radius + other.width/2) {
+                                     this.applyDamage(other, finalDmg * 0.7, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
+                                 }
+                             }
+                        }
+
+                        // --- ELECTRO SPHERE LOGIC ---
+                        if (b.damageType === 'lightning' && b.owner === 'player') {
+                             // 1. Visual Pulse
+                             this.visualEffects.push({
+                                 id: Math.random(),
+                                 active: true,
+                                 type: 'shockwave',
+                                 x: e.x + e.width/2,
+                                 y: e.y + e.height/2,
+                                 radius: 80, // Approximate Area
+                                 lifeTime: 0.2,
+                                 maxLifeTime: 0.2,
+                                 color: '#22d3ee'
+                             });
+
+                             // 2. AOE Splash (50% damage)
+                             const splashRadius = 80;
+                             for (const other of this.enemies) {
+                                 if (!other.active || other.id === e.id) continue;
+                                 const ox = other.x + other.width/2;
+                                 const oy = other.y + other.height/2;
+                                 const dist = Math.sqrt((ox - (e.x+e.width/2))**2 + (oy - (e.y+e.height/2))**2);
+                                 if (dist < splashRadius + other.width/2) {
+                                     this.applyDamage(other, finalDmg * 0.5, isCrit, 'lightning', this.gameState.playerWorldPos, b.ailmentChance);
+                                 }
+                             }
+                        }
+
                         // Pierce Logic
                         if (b.pierce > 0) {
                             b.pierce--;
@@ -2405,6 +1823,798 @@ export class GameEngine {
         }
     }
 
+    // --- MAP SYSTEM & EXPEDITION LOOP ---
+    
+    public activateMap(mapItem: ItemInstance) {
+        if (mapItem.type !== 'map') return;
+        
+        // Remove map from bag (Simple consumption logic)
+        const idx = this.gameState.backpack.findIndex(i => i.id === mapItem.id);
+        if (idx > -1) {
+             // If stack logic exists later
+             if (mapItem.stackSize && mapItem.stackSize > 1) {
+                 mapItem.stackSize--;
+             } else {
+                 this.gameState.backpack.splice(idx, 1);
+             }
+        }
+        this.callbacks.onInventoryChange();
+
+        // --- Endless Mode Check ---
+        if (mapItem.gemDefinitionId === 'map_endless_void') {
+            this.gameState.isEndlessMode = true;
+            this.gameState.currentFloor = 1;
+            
+            // Endless Mode Initial State: No bonuses, pure baseline
+            this.gameState.currentMapStats = {
+                tier: 1,
+                monsterHealthMult: 1.0,
+                monsterDamageMult: 1.0,
+                packSizeMult: 1.0,
+                xpMult: 1.0,
+                rarityMult: 1.0
+            };
+            
+            this.gameState.targetKills = 50; // Floor 1 target
+            this.callbacks.onNotification("⚔️ ENDLESS MODE STARTED ⚔️");
+
+        } else {
+            // --- Normal Map Logic ---
+            this.gameState.isEndlessMode = false;
+
+            const mapStats: MapStats = {
+                tier: mapItem.level,
+                monsterHealthMult: 1 + (mapItem.level * 0.1), 
+                monsterDamageMult: 1 + (mapItem.level * 0.1),
+                packSizeMult: 1,
+                xpMult: 1 + (mapItem.level * 0.05),
+                rarityMult: 1
+            };
+
+            for (const affix of mapItem.affixes) {
+                const val = affix.value;
+                switch(affix.stat) {
+                    case 'monsterHealth': mapStats.monsterHealthMult += val; mapStats.xpMult += val * 0.5; break;
+                    case 'monsterDamage': mapStats.monsterDamageMult += val; mapStats.xpMult += val * 0.5; break;
+                    case 'monsterPackSize': mapStats.packSizeMult += val; break;
+                    case 'xpGain': mapStats.xpMult += val; break;
+                    case 'itemRarity': mapStats.rarityMult += val; break;
+                }
+            }
+
+            // Rarity Bonuses
+            if (mapItem.rarity === 'magic') { mapStats.rarityMult += 0.2; mapStats.packSizeMult += 0.1; }
+            if (mapItem.rarity === 'rare') { mapStats.rarityMult += 0.5; mapStats.packSizeMult += 0.2; }
+            if (mapItem.rarity === 'unique') { mapStats.rarityMult += 1.0; mapStats.xpMult += 0.5; }
+
+            this.gameState.currentMapStats = mapStats;
+            this.gameState.currentFloor = 1;
+            this.gameState.targetKills = 50 + (1 * 50) + (mapStats.tier * 30); 
+            
+            this.callbacks.onNotification(`Expedition Started: Floor 1`);
+        }
+
+        // --- Common Initialization ---
+        this.gameState.worldState = 'RUN';
+        this.gameState.expeditionActive = true;
+        this.gameState.currentKills = 0;
+        this.gameState.playerWorldPos = { x: 0, y: 0 };
+        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
+        
+        // Clear Entities
+        this.enemies.forEach(e => e.active = false);
+        this.bullets.forEach(b => b.active = false);
+        this.loot.forEach(l => l.active = false);
+        this.xpOrbs.forEach(o => o.active = false);
+        this.gameState.groundEffects = [];
+        this.gameState.interactables = [];
+        this.gameState.npcs = []; 
+        this.gameState.particles = [];
+
+        this.saveGame();
+        this.updateHud();
+    }
+
+    public activateFreeRun() {
+        const freeMap = generateItem('map', 1, 'normal');
+        this.activateMap(freeMap);
+    }
+
+    private enterNextFloor() {
+        this.gameState.currentFloor += 1;
+        this.gameState.currentKills = 0;
+        this.gameState.playerWorldPos = { x: 0, y: 0 };
+        this.directorState = { gameTime: 0, spawnTimer: 0, bossSpawned: false };
+
+        // Clear Entities
+        this.enemies.forEach(e => e.active = false);
+        this.bullets.forEach(b => b.active = false);
+        this.loot.forEach(l => l.active = false); 
+        this.xpOrbs.forEach(o => o.active = false);
+        this.gameState.groundEffects = [];
+        this.gameState.interactables = [];
+        this.gameState.particles = [];
+
+        if (this.gameState.isEndlessMode) {
+            // --- Endless Mode Logic ---
+            const floor = this.gameState.currentFloor;
+            
+            // Infinite Scaling (Additive to preserve previous stacks)
+            this.gameState.currentMapStats.monsterHealthMult += 0.1;
+            this.gameState.currentMapStats.monsterDamageMult += 0.05;
+            this.gameState.currentMapStats.xpMult += 0.05;
+
+            // Environmental Deterioration (Every 5 floors)
+            if (floor % 5 === 0) {
+                 const mapAffixes = AFFIX_DATABASE.filter(a => a.validSlots.includes('map'));
+                 if (mapAffixes.length > 0) {
+                     const affix = mapAffixes[Math.floor(Math.random() * mapAffixes.length)];
+                     // Roll value between min and max
+                     const val = affix.minVal + Math.random() * (affix.maxVal - affix.minVal);
+                     
+                     switch(affix.stat) {
+                        case 'monsterHealth': 
+                            this.gameState.currentMapStats.monsterHealthMult += val; 
+                            // Map mods usually give XP/Quant too
+                            this.gameState.currentMapStats.xpMult += val * 0.5; 
+                            break;
+                        case 'monsterDamage': 
+                            this.gameState.currentMapStats.monsterDamageMult += val; 
+                            this.gameState.currentMapStats.xpMult += val * 0.5; 
+                            break;
+                        case 'monsterPackSize': 
+                            this.gameState.currentMapStats.packSizeMult += val; 
+                            break;
+                        case 'xpGain': 
+                            this.gameState.currentMapStats.xpMult += val; 
+                            break;
+                        case 'itemRarity': 
+                            this.gameState.currentMapStats.rarityMult += val; 
+                            break;
+                     }
+                     
+                     this.callbacks.onNotification("环境恶化：" + affix.name + " (T" + floor + ")");
+                 }
+            }
+
+            // Increase Kill Target
+            this.gameState.targetKills = 50 + (floor * 10);
+
+            this.callbacks.onNotification(`Endless Floor ${floor} (HP x${this.gameState.currentMapStats.monsterHealthMult.toFixed(1)})`);
+        } else {
+            // --- Normal Mode Logic ---
+            this.gameState.currentMapStats.monsterHealthMult *= 1.1; 
+            this.gameState.currentMapStats.monsterDamageMult *= 1.1;
+            
+            // Floor 5 is Boss Floor
+            if (this.gameState.currentFloor === 5) {
+                 this.gameState.targetKills = 1; 
+                 this.spawnEnemy('boss');
+                 this.directorState.bossSpawned = true;
+                 this.callbacks.onNotification(`FLOOR 5: BOSS ENCOUNTER`);
+            } else {
+                 this.gameState.targetKills = 50 + (this.gameState.currentFloor * 50) + (this.gameState.currentMapStats.tier * 30);
+                 this.callbacks.onNotification(`Descended to Floor ${this.gameState.currentFloor}`);
+            }
+        }
+
+        this.saveGame();
+        this.updateHud();
+    }
+
+    private finalizeRun() {
+        this.gameState.worldState = 'HIDEOUT';
+        this.gameState.playerWorldPos = { x: 0, y: 0 };
+        this.currentHp = this.playerStats.getStatValue('maxHp');
+        this.enemies.forEach(e => e.active = false);
+        this.bullets.forEach(b => b.active = false);
+        this.loot.forEach(l => l.active = false);
+        this.xpOrbs.forEach(o => o.active = false);
+        this.gameState.groundEffects = [];
+        this.gameState.particles = [];
+        this.gameState.expeditionActive = false;
+        this.gameState.currentFloor = 0;
+        
+        // ROGUELIKE RESET
+        this.gameState.activeSkills = [
+            createEmptySkillSlot(0), createEmptySkillSlot(1),
+            createEmptySkillSlot(2), createEmptySkillSlot(3)
+        ];
+        this.gameState.gemInventory = [];
+        this.gameState.level = 1;
+        this.gameState.xp = 0;
+        this.gameState.nextLevelXp = BASE_XP_TO_LEVEL;
+        this.chosenUpgrades = [];
+        this.recalculateStats();
+        this.currentHp = this.playerStats.getStatValue('maxHp'); 
+
+        // Setup Hideout
+        const mapDevice: Interactable = {
+            id: 999,
+            active: true,
+            type: 'map_device',
+            x: 0,
+            y: -280, // UPDATED COORD
+            width: 80,
+            height: 80,
+            color: '#c026d3',
+            interactionRadius: 100,
+            label: 'Map Device'
+        };
+        const merchant: NPC = {
+            id: 888,
+            active: true,
+            type: 'merchant',
+            name: "Merchant",
+            x: 160, // UPDATED COORD
+            y: 80,  // UPDATED COORD
+            width: 50,
+            height: 50,
+            color: '#22c55e',
+            interactionRadius: 80
+        };
+        this.gameState.interactables = [mapDevice];
+        this.gameState.npcs = [merchant];
+
+        this.callbacks.onNotification("Run Complete - Character Reset");
+        this.saveGame();
+        this.updateHud();
+        this.callbacks.onInventoryChange();
+    }
+    
+    public returnToHideout() {
+        this.finalizeRun();
+    }
+
+    // --- ITEM & STAT SYSTEM ---
+
+    public sellBatch(mode: 'normal' | 'magic' | 'rare' | 'all_junk') {
+        const backpack = this.gameState.backpack;
+        let itemsToSell: ItemInstance[] = [];
+
+        if (mode === 'all_junk') {
+            itemsToSell = backpack.filter(i => (i.rarity === 'normal' || i.rarity === 'magic') && i.type === 'equipment');
+        } else {
+            itemsToSell = backpack.filter(i => i.rarity === mode && i.type === 'equipment');
+        }
+
+        if (itemsToSell.length === 0) {
+            this.callbacks.onNotification("No matching equipment to sell.");
+            return;
+        }
+
+        let totalValue = 0;
+        const PRICES: Record<string, number> = { normal: 5, magic: 10, rare: 20, unique: 50 };
+
+        itemsToSell.forEach(item => {
+            totalValue += PRICES[item.rarity] || 1;
+        });
+
+        // Remove sold items
+        this.gameState.backpack = this.gameState.backpack.filter(i => !itemsToSell.includes(i));
+        this.gameState.gold += totalValue;
+
+        this.callbacks.onNotification(`Sold ${itemsToSell.length} items for ${totalValue} Gold`);
+        this.callbacks.onInventoryChange();
+        this.updateHud();
+        this.saveGame();
+    }
+
+    public sellSingleItem(item: ItemInstance) {
+        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
+        if (backpackIndex === -1) return;
+
+        let price = 0;
+        switch (item.rarity) {
+            case 'normal': price = 5; break;
+            case 'magic': price = 10; break;
+            case 'rare': price = 20; break;
+            case 'unique': price = 100; break;
+        }
+
+        this.gameState.backpack.splice(backpackIndex, 1);
+        this.gameState.gold += price;
+
+        this.callbacks.onNotification(`Sold ${item.name} for ${price} Gold`);
+        this.callbacks.onInventoryChange();
+        this.updateHud();
+        this.saveGame();
+    }
+
+    private recalculateStats() {
+        this.playerStats.reset();
+        
+        const level = this.gameState.level;
+
+        this.playerStats.setBase('moveSpeed', 3.0);
+        this.playerStats.setBase('attackSpeed', 1.0);
+        
+        // Base Damage = 10 + (Current Level * 2)
+        this.playerStats.setBase('bulletDamage', 10 + (level * 2));
+        
+        this.playerStats.setBase('projectileCount', 1);
+        this.playerStats.setBase('projectileSpread', 15);
+        
+        // Base HP = 100 + (Current Level * 10)
+        this.playerStats.setBase('maxHp', 100 + (level * 10));
+        
+        this.playerStats.setBase('hpRegen', 0);
+        this.playerStats.setBase('critChance', 0.05);
+        this.playerStats.setBase('critMultiplier', 1.5);
+        this.playerStats.setBase('defense', 0);
+        // Base Ailment Chance = 15%
+        this.playerStats.setBase('ailmentChance', 0.15);
+  
+        for (const upg of this.chosenUpgrades) {
+            if (upg.stat && upg.type && upg.value) {
+                this.playerStats.addModifier(upg.stat, upg.type, upg.value, upg.tags);
+            }
+        }
+  
+        const equipment = this.gameState.equipment;
+        Object.keys(equipment).forEach((key) => {
+            const slot = key as ItemSlot;
+            const item = equipment[slot];
+            if (!item) return;
+  
+            for (const affix of item.affixes) {
+                if (['monsterHealth', 'monsterDamage', 'monsterPackSize'].includes(affix.stat)) continue;
+                this.playerStats.addModifier(affix.stat as StatKey, affix.valueType, affix.value, affix.tags);
+            }
+        });
+
+        // --- HP SYNC FIX ---
+        const finalMaxHp = this.playerStats.getStatValue('maxHp');
+        // Cap current health to new max health to prevent overflow
+        if (this.currentHp > finalMaxHp) {
+            this.currentHp = finalMaxHp;
+        }
+
+        // Notify UI immediately to update stats panel and HUD
+        this.updateHud(); 
+        this.callbacks.onInventoryChange();
+    }
+
+    public equipItem(item: ItemInstance) {
+        if (item.type === 'gem' || item.type === 'map') return; 
+
+        // Smart Ring Logic: Auto-target empty slot or default to ring1
+        if (item.slot === 'ring1' || item.slot === 'ring2') {
+             if (!this.gameState.equipment.ring1) {
+                 item.slot = 'ring1';
+             } else if (!this.gameState.equipment.ring2) {
+                 item.slot = 'ring2';
+             } else {
+                 item.slot = 'ring1'; // Default replace ring1
+             }
+        }
+
+        const currentEquipped = this.gameState.equipment[item.slot as ItemSlot];
+        const backpackIndex = this.gameState.backpack.findIndex(i => i.id === item.id);
+        if (backpackIndex > -1) {
+            this.gameState.backpack.splice(backpackIndex, 1);
+        }
+        if (currentEquipped) {
+            this.gameState.backpack.push(currentEquipped);
+        }
+        this.gameState.equipment[item.slot as ItemSlot] = item;
+        this.recalculateStats(); 
+        this.saveGame();
+        // onInventoryChange called inside recalculateStats now, but safe to call again or remove
+        // Leaving it here ensures flow is clear
+    }
+
+    public unequipItem(slot: ItemSlot) {
+        if (slot === 'gem' as any) return; 
+        const item = this.gameState.equipment[slot];
+        if (!item) return;
+        if (this.gameState.backpack.length >= BACKPACK_CAPACITY) {
+            this.callbacks.onNotification("Backpack Full!");
+            return;
+        }
+        this.gameState.backpack.push(item);
+        this.gameState.equipment[slot] = null;
+        this.recalculateStats(); 
+        this.saveGame();
+    }
+
+    // --- GEM MANAGEMENT ---
+
+    public equipGem(gemItem: ItemInstance, skillIndex: number, isSupport: boolean, subSlotIndex: number = -1) {
+        const activeSkill = this.gameState.activeSkills[skillIndex];
+        if (!activeSkill) return;
+
+        const gemDef = SKILL_DATABASE[gemItem.gemDefinitionId || ''];
+        if (!gemDef) return;
+
+        if (isSupport) {
+            if (gemDef.type !== 'support') {
+                this.callbacks.onNotification("Must be Support Gem!");
+                return;
+            }
+            if (!activeSkill.activeGem) {
+                this.callbacks.onNotification("Active Skill Required!");
+                return;
+            }
+            if (!SkillManager.checkCompatibility(activeSkill.activeGem.gemDefinitionId!, gemItem.gemDefinitionId!)) {
+                this.callbacks.onNotification("Incompatible Gem Tags!");
+                return;
+            }
+        } else {
+            if (gemDef.type !== 'active') {
+                this.callbacks.onNotification("Must be Active Gem!");
+                return;
+            }
+        }
+
+        let targetSubSlot = subSlotIndex;
+        if (isSupport && targetSubSlot === -1) {
+            targetSubSlot = activeSkill.supportGems.findIndex(g => g === null);
+            if (targetSubSlot === -1) targetSubSlot = 0; 
+        }
+
+        if (isSupport && gemItem.gemDefinitionId) {
+             const isDuplicate = activeSkill.supportGems.some((existingGem, idx) => {
+                 if (idx === targetSubSlot) return false;
+                 if (!existingGem) return false;
+                 return existingGem.gemDefinitionId === gemItem.gemDefinitionId;
+             });
+
+             if (isDuplicate) {
+                 this.callbacks.onNotification("Cannot stack identical Support Gems.");
+                 return;
+             }
+        }
+
+        const invIndex = this.gameState.gemInventory.findIndex(i => i.id === gemItem.id);
+        if (invIndex > -1) this.gameState.gemInventory.splice(invIndex, 1);
+
+        let existingItem: ItemInstance | null = null;
+        if (isSupport) {
+            existingItem = activeSkill.supportGems[targetSubSlot];
+            activeSkill.supportGems[targetSubSlot] = gemItem;
+        } else {
+            existingItem = activeSkill.activeGem;
+            activeSkill.activeGem = gemItem;
+            activeSkill.cooldownTimer = 0; 
+        }
+
+        if (existingItem) {
+            this.gameState.gemInventory.push(existingItem);
+        }
+        
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public unequipGem(skillIndex: number, isSupport: boolean, subSlotIndex: number) {
+        const activeSkill = this.gameState.activeSkills[skillIndex];
+        if (!activeSkill) return;
+
+        let itemToUnequip: ItemInstance | null = null;
+        if (isSupport) {
+            itemToUnequip = activeSkill.supportGems[subSlotIndex];
+            activeSkill.supportGems[subSlotIndex] = null;
+        } else {
+            itemToUnequip = activeSkill.activeGem;
+            activeSkill.activeGem = null;
+        }
+
+        if (itemToUnequip) {
+            this.gameState.gemInventory.push(itemToUnequip);
+        }
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public equipSupportToSkill(skillIndex: number) {
+        if (!this.gameState.pendingSupportGem) return;
+        
+        const skill = this.gameState.activeSkills[skillIndex];
+        const gem = this.gameState.pendingSupportGem;
+        
+        let emptySlot = skill.supportGems.findIndex(g => g === null);
+        if (emptySlot === -1) emptySlot = 0; 
+
+        const isDuplicate = skill.supportGems.some((existingGem, idx) => {
+             if (idx === emptySlot && skill.supportGems[idx] === null) return false; 
+             if (idx === emptySlot) return false; 
+             if (!existingGem) return false;
+             return existingGem.gemDefinitionId === gem.gemDefinitionId;
+        });
+
+        if (isDuplicate) {
+             this.callbacks.onNotification("Cannot stack identical Support Gems.");
+             return;
+        }
+
+        skill.supportGems[emptySlot] = gem;
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        this.gameState.isPaused = false;
+        this.gameState.lastFrameTime = performance.now();
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public stashPendingSupportGem() {
+        if (!this.gameState.pendingSupportGem) return;
+        this.gameState.gemInventory.push(this.gameState.pendingSupportGem);
+        this.callbacks.onNotification("Gem moved to Pouch");
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        this.gameState.isPaused = false;
+        this.gameState.lastFrameTime = performance.now();
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public cancelSupportSelection() {
+        this.gameState.pendingSupportGem = null;
+        this.gameState.isSelectingSupport = false;
+        // Do not modify isPaused state, because the player is still in the level up screen
+        this.saveGame();
+        this.callbacks.onInventoryChange();
+    }
+
+    public selectUpgrade(upgrade: UpgradeDefinition) {
+        if (upgrade.evolution) {
+            const { skillIndex, evolutionId } = upgrade.evolution;
+            const skill = this.gameState.activeSkills[skillIndex];
+            if (skill) {
+                skill.evolutionId = evolutionId;
+                this.callbacks.onNotification(`Skill Evolved!`);
+                this.recalculateStats(); 
+            }
+            
+            // Resume Game Loop
+            this.gameState.level += 1;
+            this.gameState.xp -= this.gameState.nextLevelXp;
+            this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
+            this.gameState.isPaused = false;
+            this.gameState.lastFrameTime = performance.now();
+            this.saveGame();
+            this.updateHud();
+            return;
+        } 
+        
+        if (upgrade.gemItem) {
+            const gemDef = SKILL_DATABASE[upgrade.gemItem.gemDefinitionId!];
+            if (gemDef.type === 'active') {
+                const emptyIndex = this.gameState.activeSkills.findIndex(s => s.activeGem === null);
+                if (emptyIndex !== -1) {
+                    this.gameState.activeSkills[emptyIndex].activeGem = upgrade.gemItem;
+                    this.gameState.activeSkills[emptyIndex].cooldownTimer = 0;
+                    this.callbacks.onNotification(`Learned ${gemDef.name}!`);
+                } else {
+                    this.gameState.gemInventory.push(upgrade.gemItem);
+                    this.callbacks.onNotification(`${gemDef.name} added to Bag`);
+                }
+            } else if (gemDef.type === 'support') {
+                const hasActiveSkill = this.gameState.activeSkills.some(s => s.activeGem !== null);
+                if (hasActiveSkill) {
+                    this.gameState.pendingSupportGem = upgrade.gemItem;
+                    this.gameState.isSelectingSupport = true;
+                    return; 
+                } else {
+                    this.gameState.gemInventory.push(upgrade.gemItem);
+                    this.callbacks.onNotification(`Stashed ${gemDef.name} (No Active Skills)`);
+                }
+            }
+        } else {
+            this.chosenUpgrades.push(upgrade);
+            if (upgrade.stat === 'maxHp' && upgrade.value) {
+                this.currentHp += upgrade.value; 
+            }
+            this.recalculateStats();
+        }
+
+        this.gameState.level += 1;
+        this.gameState.xp -= this.gameState.nextLevelXp;
+        // Steep XP Curve: 150 * (1.25 ^ (Level - 1))
+        this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
+        
+        this.gameState.isPaused = false;
+        this.gameState.lastFrameTime = performance.now();
+        
+        this.saveGame();
+        this.updateHud();
+    }
+
+    private triggerLevelUp() {
+        this.gameState.isPaused = true;
+        const options = generateRewards(this.gameState.level, this.gameState.activeSkills);
+        this.callbacks.onLevelUp(options);
+    }
+
+    private gainXp(amount: number) {
+        // Level Gap Penalty Logic
+        let penaltyMultiplier = 1.0;
+        // Default Tier 1 if hideout or unknown
+        const mapTier = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1; 
+        const playerLevel = this.gameState.level;
+        
+        // If Player is significantly higher than map tier
+        if (playerLevel > mapTier + 3) {
+            // Severe Penalty: (MapTier / PlayerLevel) ^ 4
+            penaltyMultiplier = Math.pow(mapTier / playerLevel, 4);
+        }
+
+        // Apply Stats Multiplier (Wisdom, etc)
+        const xpMult = this.playerStats.getStatValue('xpGain');
+
+        const effectiveXp = Math.max(1, Math.floor(amount * penaltyMultiplier * xpMult));
+        
+        this.gameState.xp += effectiveXp;
+        if (this.gameState.xp >= this.gameState.nextLevelXp) {
+            this.triggerLevelUp();
+        } else {
+            this.updateHud();
+        }
+    }
+
+    private spawnXPOrb(x: number, y: number, value: number) {
+        const orb = this.xpOrbs.find(o => !o.active);
+        if (orb) {
+            orb.active = true;
+            orb.x = x + (Math.random() - 0.5) * 20;
+            orb.y = y + (Math.random() - 0.5) * 20;
+            orb.value = value;
+            orb.magnetized = false;
+            
+            // Tier Logic
+            if (value >= 500) orb.tier = 'gold';
+            else if (value >= 150) orb.tier = 'pink';
+            else if (value >= 50) orb.tier = 'purple';
+            else orb.tier = 'blue';
+        }
+    }
+
+    // --- GAMEPLAY HELPERS ---
+
+    private checkCollision(rect1: Entity, rect2: Entity) {
+        return (rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y);
+    }
+
+    private spawnLoot(x: number, y: number, force = false, chanceOverride?: number) {
+        // Base probability calculation: 2% by default
+        let finalChance = chanceOverride ?? LOOT_CHANCE;
+        
+        if (this.gameState.worldState === 'RUN') {
+            // Scale chance by map rarity multiplier (Base 1 + bonuses)
+            finalChance *= this.gameState.currentMapStats.rarityMult; 
+        }
+
+        if (!force && Math.random() > finalChance) return;
+        
+        const loot = this.loot.find(l => !l.active);
+        if (loot) {
+            const roll = Math.random();
+            let rarity: ItemRarity = 'normal';
+            const rarityBoost = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.rarityMult : 1;
+            
+            // REMOVED UNIQUE DROP LOGIC
+            // if (roll > 0.95 / rarityBoost) rarity = 'unique'; 
+            if (roll > 0.85 / rarityBoost) rarity = 'rare';
+            else if (roll > 0.6 / rarityBoost) rarity = 'magic';
+
+            const iLvl = this.gameState.worldState === 'RUN' ? this.gameState.currentMapStats.tier : 1;
+            const item = generateItem('random', iLvl, rarity);
+
+            loot.active = true;
+            loot.x = x;
+            loot.y = y;
+            loot.lifeTime = 60; 
+            loot.itemData = item;
+            loot.rarity = rarity;
+            loot.autoCollectRadius = 50; 
+        }
+    }
+  
+    private spawnFloatingText(x: number, y: number, text: string, color: string = 'white', scale: number = 1.0) {
+        const textObj = this.floatingTexts.find(t => !t.active);
+        if (textObj) {
+            textObj.active = true;
+            textObj.x = x + Math.random() * 20 - 10;
+            textObj.y = y;
+            textObj.text = text;
+            textObj.lifeTime = FLOATING_TEXT_LIFETIME;
+            textObj.velocityY = FLOATING_TEXT_SPEED;
+            textObj.color = color;
+            textObj.scale = scale;
+        }
+    }
+  
+    private triggerShake(duration: number = 0.3) {
+        this.gameState.shakeTimer = duration;
+    }
+
+    private spawnEnemy(type: EnemyType) {
+        if (!this.canvas) return;
+        const enemy = this.enemies.find(e => !e.active);
+        if (!enemy) return; 
+    
+        const canvasWidth = this.canvas.width;
+        const canvasHeight = this.canvas.height;
+
+        const angle = Math.random() * Math.PI * 2;
+        const viewportRadius = Math.sqrt(Math.pow(canvasWidth / CAMERA_ZOOM / 2, 2) + Math.pow(canvasHeight / CAMERA_ZOOM / 2, 2));
+        const radius = viewportRadius + 100;
+        
+        const stats = ENEMY_STATS[type];
+        const mapStats = this.gameState.currentMapStats;
+    
+        const isElite = Math.random() < 0.05 && type !== 'boss'; 
+        enemy.active = true;
+        enemy.type = type;
+        enemy.isElite = isElite;
+        enemy.knockbackVelocity = { x: 0, y: 0 };
+        
+        const hpMult = isElite ? 2.0 : 1.0;
+        const sizeMult = isElite ? 1.2 : 1.0;
+        
+        enemy.width = stats.size * sizeMult;
+        enemy.height = stats.size * sizeMult;
+        
+        enemy.hp = stats.hp * mapStats.monsterHealthMult * hpMult;
+        enemy.maxHp = enemy.hp;
+        enemy.speed = stats.speed;
+        
+        // Modifiers Logic
+        enemy.modifiers = [];
+        enemy.resistances = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
+        enemy.statuses = {}; // Reset statuses
+
+        // Reset timers
+        enemy.trailTimer = 0;
+        enemy.blastTimer = 0;
+
+        if (isElite || (type === 'boss') || this.gameState.currentFloor >= 3) {
+            // Chance to add random modifiers
+            const modCount = type === 'boss' ? 3 : isElite ? 2 : 1;
+            
+            for(let i=0; i<modCount; i++) {
+                if (Math.random() < 0.7) {
+                    const mod = ENEMY_MODIFIERS[Math.floor(Math.random() * ENEMY_MODIFIERS.length)];
+                    if (!enemy.modifiers.includes(mod)) {
+                        enemy.modifiers.push(mod);
+                        
+                        // Apply Stat changes immediately
+                        if (mod === 'fire_res') enemy.resistances.fire = 0.5;
+                        if (mod === 'cold_res') enemy.resistances.cold = 0.5;
+                        if (mod === 'lightning_res') enemy.resistances.lightning = 0.5;
+                        if (mod === 'chaos_res') enemy.resistances.chaos = 0.5;
+
+                        // Temporal Bubble spawn logic
+                        if (mod === 'temporal') {
+                            this.gameState.groundEffects.push({
+                                id: uuid(),
+                                x: enemy.x + enemy.width/2,
+                                y: enemy.y + enemy.height/2,
+                                radius: 250,
+                                type: 'bubble',
+                                duration: 99999, // Permanent until death
+                                sourceId: enemy.id
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        enemy.x = this.gameState.playerWorldPos.x + Math.cos(angle) * radius;
+        enemy.y = this.gameState.playerWorldPos.y + Math.sin(angle) * radius;
+    
+        if (type === 'boss') {
+            // Increased Attack Delay: Boss 2.0 -> 2.4
+            enemy.attackTimer = 2.4;
+            this.callbacks.onNotification("BOSS SPAWNED!");
+        } else {
+            // Ensure non-bosses don't have an attack timer
+            enemy.attackTimer = undefined;
+        }
+    }
+    
     private drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, dt: number) {
         const time = Date.now() / 1000;
         const isMoving = this.joystickState.active;
@@ -2580,77 +2790,166 @@ export class GameEngine {
         };
 
         // --- DRAW GROUND EFFECTS ---
+        const currentTime = Date.now(); // Cache time
+
         for (const effect of this.gameState.groundEffects) {
             ctx.save();
             ctx.translate(effect.x, effect.y);
-            
+
             if (effect.type === 'fire_ground') {
-                ctx.fillStyle = `rgba(249, 115, 22, ${0.3 + Math.sin(Date.now()/200)*0.1})`;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#f97316';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            } 
-            else if (effect.type === 'ice_ground') {
-                ctx.fillStyle = `rgba(6, 182, 212, 0.3)`;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#cffafe';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                // Ice texture
-                ctx.fillStyle = 'white';
-                for(let k=0; k<3; k++) {
-                    ctx.fillRect(Math.random()*effect.radius - effect.radius/2, Math.random()*effect.radius - effect.radius/2, 4, 4);
-                }
-            } 
-            else if (effect.type === 'lightning_ground') {
-                 ctx.fillStyle = `rgba(168, 85, 247, 0.2)`;
-                 ctx.beginPath();
-                 ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                 ctx.fill();
-                 if (Math.random() > 0.5) {
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#facc15';
-                    ctx.lineWidth = 2;
-                    ctx.moveTo(-10, -10); ctx.lineTo(10, 10);
-                    ctx.stroke();
-                 }
-            }
-            else if (effect.type === 'bubble') {
-                // Large temporal bubble
-                const rot = Date.now()/1000;
-                ctx.strokeStyle = '#a855f7';
-                ctx.lineWidth = 4;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
-                ctx.stroke();
+                // Lighter blending for core flame
+                ctx.globalCompositeOperation = 'lighter';
                 
-                ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
+                // Jittery radius
+                const jitter = Math.sin(currentTime * 0.015 + effect.x) * 3;
+                const r = Math.max(0, effect.radius + jitter);
+
+                // Radial Gradient
+                const grad = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+                grad.addColorStop(0, '#fef08a'); // Bright Yellow (Core)
+                grad.addColorStop(0.4, '#ea580c'); // Orange Red (Body)
+                grad.addColorStop(1, 'rgba(0,0,0,0)'); // Transparent
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Rotating internal ring
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius * 0.9), rot, rot + Math.PI);
-                ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+                // Dark Charred Edge (Source-Over to darken)
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = '#431407'; // Very dark brown/red
                 ctx.lineWidth = 2;
                 ctx.stroke();
+
+                // Occasional Ember Particle
+                if (Math.random() < 0.05) {
+                    this.gameState.particles.push({
+                        id: Math.random(),
+                        x: effect.x + (Math.random() - 0.5) * r * 0.8,
+                        y: effect.y + (Math.random() - 0.5) * r * 0.8,
+                        vx: (Math.random() - 0.5) * 20,
+                        vy: -30 - Math.random() * 30, // Upwards
+                        life: 0.5 + Math.random() * 0.5,
+                        maxLife: 1.0,
+                        color: '#fdba74', // Light orange
+                        size: Math.random() * 3 + 1
+                    });
+                }
+            } 
+            else if (effect.type === 'ice_ground') {
+                // Base Glow
+                ctx.globalCompositeOperation = 'screen'; // Icy glow
+                ctx.fillStyle = 'rgba(6, 182, 212, 0.15)'; // Cyan tint
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Glowing Edge
+                ctx.strokeStyle = 'rgba(207, 250, 254, 0.4)'; // Light cyan
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Static Cracks (Pseudo-random based on position)
+                ctx.strokeStyle = '#cffafe'; // White-ish Cyan
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                
+                // Use coordinate as seed
+                const seed = Math.abs(effect.x * 123 + effect.y * 456); 
+                const crackCount = 3 + (seed % 3); // 3 to 5 cracks
+                
+                for(let i=0; i<crackCount; i++) {
+                    const angle = (seed + i * (Math.PI * 2 / crackCount)) % (Math.PI * 2);
+                    const len = effect.radius * (0.4 + ((seed * (i+1)) % 60) / 100); // 0.4 to 1.0 radius
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len);
+                }
+                ctx.stroke();
+            }
+            else if (effect.type === 'lightning_ground') {
+                ctx.globalCompositeOperation = 'lighter';
+                
+                // Static Field Base
+                ctx.fillStyle = 'rgba(168, 85, 247, 0.15)'; // Purple
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Dynamic Arc (30% chance)
+                if (Math.random() < 0.3) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = effect.radius;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    // Jagged line
+                    const midX = Math.cos(angle) * r * 0.5 + (Math.random()-0.5)*20;
+                    const midY = Math.sin(angle) * r * 0.5 + (Math.random()-0.5)*20;
+                    const endX = Math.cos(angle) * r;
+                    const endY = Math.sin(angle) * r;
+                    
+                    ctx.lineTo(midX, midY);
+                    ctx.lineTo(endX, endY);
+
+                    ctx.strokeStyle = '#fef08a'; // Yellow-200
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 10;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+            }
+            else if (effect.type === 'bubble') {
+                // Void Bubble
+                ctx.fillStyle = 'rgba(88, 28, 135, 0.2)'; // Deep Purple
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Rune Rings
+                ctx.strokeStyle = '#d8b4fe'; // Lavender
+                ctx.lineWidth = 2;
+                
+                // Ring 1: Clockwise
+                ctx.save();
+                ctx.rotate(currentTime * 0.001);
+                ctx.setLineDash([15, 10]); // Dash pattern
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius * 0.9, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+
+                // Ring 2: Counter-Clockwise
+                ctx.save();
+                ctx.rotate(-currentTime * 0.0015);
+                ctx.setLineDash([5, 15]); // Different dash
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius * 0.7, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
             }
             else if (effect.type === 'blast_warning') {
-                // Expanding circle logic relative to remaining duration
-                const pct = 1.0 - effect.duration; // 0 to 1 as it nears expiry (assuming 1s duration)
-                ctx.fillStyle = `rgba(239, 68, 68, ${0.2 + pct*0.3})`;
+                // "Doom" Timer style
+                const progress = Math.max(0, Math.min(1, 1.0 - (effect.duration / 1.5))); 
+
+                // 1. Danger Zone Background
+                ctx.fillStyle = 'rgba(69, 10, 10, 0.3)'; // Dark Red bg
                 ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius), 0, Math.PI * 2);
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
                 ctx.fill();
-                
+
+                // 2. Countdown Fill (Solid expanding circle)
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; // Red-500
                 ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0, effect.radius * pct), 0, Math.PI * 2); // Inner expanding circle
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, effect.radius * progress, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 3. Danger Border
                 ctx.strokeStyle = '#ef4444';
                 ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius, 0, Math.PI * 2);
                 ctx.stroke();
             }
 
@@ -2662,31 +2961,73 @@ export class GameEngine {
             ctx.save();
             ctx.translate(npc.x + npc.width/2, npc.y + npc.height/2);
             
-            // Draw Range Circle (Subtle)
+            // 呼吸动画
+            const breathe = Math.sin(Date.now() / 500) * 1.5;
+
+            // 1. 绘制交互范围圈 (保持微妙)
             ctx.beginPath();
             ctx.arc(0, 0, npc.interactionRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(34, 197, 94, 0.3)';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(34, 197, 94, 0.15)'; // 非常淡的绿色
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
             ctx.stroke();
+            ctx.setLineDash([]); // 重置虚线
 
-            // Draw NPC Body
-            ctx.fillStyle = npc.color;
+            // 2. 绘制沉重的背包 (Backpack) - 在身体后方
+            ctx.save();
+            ctx.rotate(-0.2); // 稍微倾斜
+            ctx.fillStyle = '#78350f'; // 皮革棕
             ctx.beginPath();
-            ctx.arc(0, 0, npc.width/2, 0, Math.PI * 2);
+            // 一个巨大的椭圆背包
+            ctx.ellipse(15, -5 + breathe, 22, 28, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // 背包绑带/补丁细节
+            ctx.fillStyle = '#92400e'; 
+            ctx.fillRect(10, -15 + breathe, 10, 20);
+            // 挂着的卷轴筒
+            ctx.fillStyle = '#fcd34d'; // 金色卷轴
+            ctx.beginPath();
+            ctx.arc(25, 10 + breathe, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // 3. 绘制长袍身体 (Body)
+            ctx.fillStyle = '#451a03'; // 深褐色长袍
+            ctx.beginPath();
+            // 梯形身体
+            ctx.moveTo(-10, -15 + breathe);
+            ctx.lineTo(10, -15 + breathe);
+            ctx.lineTo(14, 20 + breathe);
+            ctx.lineTo(-14, 20 + breathe);
+            ctx.fill();
+
+            // 4. 绘制兜帽头部 (Hood)
+            ctx.fillStyle = '#552006'; // 稍浅一点的褐色
+            ctx.beginPath();
+            ctx.arc(0, -18 + breathe, 11, 0, Math.PI * 2); // 头部轮廓
             ctx.fill();
             
-            ctx.shadowColor = 'black';
+            // 脸部阴影 (Mystery Face)
+            ctx.fillStyle = '#1a0500'; // 极深棕色
+            ctx.beginPath();
+            ctx.arc(0, -16 + breathe, 7, 0, Math.PI, false); // 半圆阴影
+            ctx.fill();
+
+            // 5. 悬浮的金币图标 (Floating Icon)
+            const iconFloat = Math.sin(Date.now() / 300) * 3;
+            ctx.fillStyle = '#fbbf24'; // 金色
+            ctx.shadowColor = '#fbbf24';
             ctx.shadowBlur = 10;
-            ctx.font = '24px sans-serif';
+            ctx.font = '20px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText("💰", 0, 2);
+            ctx.fillText("$", 0, -45 + iconFloat + breathe);
+            ctx.shadowBlur = 0; // 重置光晕
 
-            // Name Tag
-            ctx.fillStyle = '#22c55e';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.shadowBlur = 0;
-            ctx.fillText(npc.name, 0, -npc.height/2 - 10);
+            // 名字标签
+            ctx.fillStyle = '#86efac'; // 亮绿色文字
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillText(npc.name, 0, 35);
 
             ctx.restore();
         }
@@ -2696,22 +3037,84 @@ export class GameEngine {
             if (int.type === 'map_device') {
                 ctx.save();
                 ctx.translate(int.x + int.width/2, int.y + int.height/2);
-                ctx.fillStyle = '#1e293b';
+
+                // 1. Pedestal (Stone Base)
+                ctx.fillStyle = '#292524'; // Stone-800
                 ctx.beginPath();
-                ctx.arc(0, 0, 40, 0, Math.PI * 2);
+                ctx.arc(0, 0, 50, 0, Math.PI * 2);
                 ctx.fill();
-                
-                const t = Date.now() / 1000;
-                ctx.strokeStyle = '#c026d3';
+                ctx.strokeStyle = '#57534e'; // Stone-600 Highlight
                 ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(0, 0, 30, t, t + Math.PI * 1.5);
                 ctx.stroke();
 
-                ctx.strokeStyle = '#e879f9';
+                // 2. Pillars (Cardinal Supports)
+                ctx.fillStyle = '#44403c'; // Stone-700
+                for(let i=0; i<4; i++) {
+                    ctx.save();
+                    ctx.rotate((Math.PI / 2) * i);
+                    ctx.translate(0, -48); // Push out to edge
+                    ctx.fillRect(-8, -8, 16, 16); // Square Pillar
+                    // Bevel detail
+                    ctx.strokeStyle = '#1c1917';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(-8, -8, 16, 16);
+                    ctx.restore();
+                }
+
+                const t = Date.now() / 1000;
+
+                // 3. Mechanical Ring (Bronze Gear)
+                ctx.save();
+                ctx.rotate(t * 0.5); // Slow Rotation
+                ctx.strokeStyle = '#b45309'; // Amber-700 (Bronze)
+                ctx.lineWidth = 4;
+                ctx.setLineDash([8, 6]); // Gear teeth look
                 ctx.beginPath();
-                ctx.arc(0, 0, 20, -t * 1.5, -t * 1.5 + Math.PI);
+                ctx.arc(0, 0, 38, 0, Math.PI * 2);
                 ctx.stroke();
+                ctx.restore();
+
+                // 4. Energy Core (Void Receptacle)
+                ctx.save();
+                // Breathing effect
+                const pulse = 1 + Math.sin(t * 2) * 0.05;
+                ctx.scale(pulse, pulse);
+
+                const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 32);
+                grad.addColorStop(0, '#d8b4fe'); // Light Purple core
+                grad.addColorStop(0.4, '#7e22ce'); // Purple body
+                grad.addColorStop(1, '#000000');   // Dark edge
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 32, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Inner Void Swirls (Counter-rotating)
+                ctx.rotate(-t);
+                ctx.strokeStyle = 'rgba(216, 180, 254, 0.3)'; // Faint Lavender
+                ctx.lineWidth = 2;
+                ctx.setLineDash([]); // Reset dash
+                ctx.beginPath();
+                ctx.arc(0, 0, 20, 0, Math.PI * 1.5); // Incomplete circle
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(0, 0, 10, Math.PI, Math.PI * 2.5); // Smaller incomplete circle offset
+                ctx.stroke();
+
+                ctx.restore();
+
+                // 5. Floating Hologram
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#d8b4fe';
+                ctx.shadowBlur = 10;
+                // Bobbing up and down
+                ctx.fillText("🗺️", 0, -10 + Math.sin(t * 3) * 3);
+                ctx.shadowBlur = 0; // Reset
+
                 ctx.restore();
             } else if (int.type.includes('portal')) {
                 ctx.save();
@@ -2922,6 +3325,51 @@ export class GameEngine {
                 ctx.beginPath();
                 ctx.arc(0, 0, Math.max(0, currentRadius * 0.8), 0, Math.PI * 2);
                 ctx.stroke();
+
+                ctx.restore();
+            } else if (eff.type === 'falling_ice') {
+                ctx.save();
+                // Calculate falling animation: Accelerate from height (h=300)
+                const dropHeight = 300;
+                const progress = 1 - (eff.lifeTime / eff.maxLifeTime); // 0 to 1
+                const easeIn = progress * progress; // Acceleration
+                const currentY = eff.y - dropHeight * (1 - easeIn); 
+
+                ctx.translate(eff.x, currentY);
+
+                // 1. Draw Ice Shard (Inverted Triangle)
+                ctx.beginPath();
+                // Ice Blue Gradient
+                const grad = ctx.createLinearGradient(0, -60, 0, 0);
+                grad.addColorStop(0, 'rgba(255, 255, 255, 0)'); // Tail transparent
+                grad.addColorStop(0.5, '#bae6fd'); // Sky-200
+                grad.addColorStop(1, '#ffffff'); // Tip pure white
+                ctx.fillStyle = grad;
+                
+                ctx.moveTo(0, 0); // Tip
+                ctx.lineTo(-8, -80); // Top Left
+                ctx.lineTo(8, -80); // Top Right
+                ctx.fill();
+
+                // 2. Draw Trail (Speed Lines)
+                ctx.beginPath();
+                ctx.fillStyle = 'rgba(186, 230, 253, 0.3)';
+                ctx.moveTo(0, -20);
+                ctx.lineTo(-4, -120);
+                ctx.lineTo(4, -120);
+                ctx.fill();
+
+                // 3. Impact Shockwave (Last 20%)
+                if (progress > 0.8) {
+                    // Restore drawing context effectively to ground level implicitly by logic or check
+                    // Since currentY is very close to eff.y here, we draw locally
+                    const impactProgress = (progress - 0.8) * 5; // 0 to 1
+                    ctx.scale(1 + impactProgress, 0.5 + impactProgress * 0.5); // Flattened expansion
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgba(255, 255, 255, ${1 - impactProgress})`; // Fade out
+                    ctx.arc(0, 0, 40 * impactProgress, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 ctx.restore();
             }
@@ -3217,6 +3665,63 @@ export class GameEngine {
                 ctx.fill();
 
                 ctx.globalCompositeOperation = 'source-over';
+                ctx.restore();
+            } else if (b.owner === 'player' && b.damageType === 'lightning') {
+                // --- ELECTRO SPHERE RENDER ---
+                const cx = b.x + b.width/2;
+                const cy = b.y + b.height/2;
+                const radius = b.width/2;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                
+                // Inner Core
+                ctx.fillStyle = '#ccfbf1'; // Teal 100
+                ctx.shadowColor = '#22d3ee';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.6, 0, Math.PI*2);
+                ctx.fill();
+
+                // Jittery Arcs
+                ctx.strokeStyle = '#22d3ee'; // Cyan 400
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                const segments = 8;
+                for(let k=0; k<=segments; k++) {
+                    const angle = (k/segments) * Math.PI*2;
+                    const jitter = (Math.random() - 0.5) * 5;
+                    const r = radius + jitter;
+                    const px = Math.cos(angle) * r;
+                    const py = Math.sin(angle) * r;
+                    if(k===0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+
+                ctx.restore();
+            } else if (b.owner === 'player' && b.damageType === 'cold') {
+                // --- ICE SHARD RENDER ---
+                const cx = b.x + b.width / 2;
+                const cy = b.y + b.height / 2;
+                
+                ctx.save();
+                ctx.fillStyle = '#e0f2fe'; // Sky-100
+                ctx.shadowColor = '#38bdf8'; // Sky-400
+                ctx.shadowBlur = 10;
+                
+                // Diamond Shape for Ice
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 10);
+                ctx.lineTo(cx + 8, cy);
+                ctx.lineTo(cx, cy + 10);
+                ctx.lineTo(cx - 8, cy);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
                 ctx.restore();
             } else {
                 const key = b.owner === 'enemy' ? 'bulletBoss' : 'bullet';
