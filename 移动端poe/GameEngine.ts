@@ -54,8 +54,8 @@ const SAVE_KEY = 'poe_roguelite_save_v1';
 const ENEMY_STATS: Record<EnemyType, { size: number; hp: number; speed: number }> = {
     basic: { size: 40, hp: 10, speed: 100 },
     fast: { size: 30, hp: 5, speed: 150 },
-    tank: { size: 50, hp: 30, speed: 60 },
-    boss: { size: 120, hp: 1000, speed: 40 },
+    tank: { size: 50, hp: 150, speed: 60 },
+    boss: { size: 120, hp: 25000, speed: 40 },
 };
 
 const ENEMY_MODIFIERS: EnemyModifier[] = [
@@ -83,7 +83,8 @@ function createEmptySkillSlot(id: number): ActiveSkillInstance {
         instanceId: `skill_${id}`,
         activeGem: null,
         supportGems: [null, null, null],
-        cooldownTimer: 0
+        cooldownTimer: 0,
+        level: 1
     };
 }
 
@@ -274,12 +275,29 @@ export class GameEngine {
             const raw = localStorage.getItem(SAVE_KEY);
             if (!raw) return null;
             const parsed = JSON.parse(raw);
+            
+            // --- 兼容性修复 ---
             if (!parsed.currentFloor) parsed.currentFloor = 0;
             if (parsed.gold === undefined) parsed.gold = 0;
             if (!parsed.npcs) parsed.npcs = [];
             if (!parsed.groundEffects) parsed.groundEffects = [];
             if (!parsed.particles) parsed.particles = [];
             if (!parsed.xpOrbs) parsed.xpOrbs = [];
+            
+            // 关键修复：给旧存档的技能补上 level 属性
+            if (parsed.activeSkills) {
+                parsed.activeSkills.forEach((skill: any) => {
+                    // 如果存在技能宝石但没有等级，初始化为 1
+                    if (skill.activeGem && (skill.level === undefined || skill.level === null)) {
+                        skill.level = 1;
+                    }
+                    // 确保空槽位也有 level 字段
+                    if (skill.level === undefined) {
+                        skill.level = 1;
+                    }
+                });
+            }
+            // -----------------
             
             // Re-inject NPCs if in hideout
             if (parsed.worldState === 'HIDEOUT') {
@@ -511,7 +529,7 @@ export class GameEngine {
         this.joystickState.vector = { x: 0, y: 0 };
     }
 
-    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0, behavior: 'normal' | 'orbit' = 'normal', areaOfEffect: number = 0) {
+    private spawnBullet(x: number, y: number, angle: number, owner: 'player' | 'enemy', speed: number, size: number, color: string, damageType: DamageType, damage?: number, pierce: number = 0, ailmentChance: number = 0, behavior: 'normal' | 'orbit' = 'normal') {
         const bullet = this.bullets.find(b => !b.active);
         if (!bullet) return;
         bullet.active = true;
@@ -529,7 +547,6 @@ export class GameEngine {
         bullet.damage = damage;
         bullet.pierce = pierce;
         bullet.ailmentChance = ailmentChance;
-        bullet.areaOfEffect = areaOfEffect; // Capture AOE
         
         // Orbit Logic
         bullet.behavior = behavior;
@@ -738,7 +755,7 @@ export class GameEngine {
                     angle = (safeCount > 1 ? startAngle + i * spreadRad : baseAngle);
                 }
                 
-                this.spawnBullet(px, py, angle, 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance, isOrbit ? 'orbit' : 'normal', skill.stats.areaOfEffect);
+                this.spawnBullet(px, py, angle, 'player', skill.stats.projectileSpeed, size, color, dmgType, undefined, skill.stats.pierceCount, skill.stats.ailmentChance, isOrbit ? 'orbit' : 'normal');
             }
         } 
         else if (skill.tags.includes('area')) {
@@ -1703,33 +1720,6 @@ export class GameEngine {
 
                         this.applyDamage(e, finalDmg, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
                         
-                        // AOE LOGIC (Evolution Support)
-                        if (b.areaOfEffect && b.areaOfEffect > 0) {
-                             const radius = b.areaOfEffect;
-                             // Visual
-                             this.visualEffects.push({
-                                 id: Math.random(),
-                                 active: true,
-                                 type: 'hit', // or explosion
-                                 x: e.x + e.width/2,
-                                 y: e.y + e.height/2,
-                                 radius: radius,
-                                 lifeTime: 0.2,
-                                 maxLifeTime: 0.2,
-                                 color: b.damageType === 'fire' ? '#f97316' : '#22d3ee'
-                             });
-                             // Damage neighbors
-                             for (const other of this.enemies) {
-                                 if (!other.active || other.id === e.id) continue;
-                                 const ox = other.x + other.width/2;
-                                 const oy = other.y + other.height/2;
-                                 const dist = Math.sqrt((ox - (e.x+e.width/2))**2 + (oy - (e.y+e.height/2))**2);
-                                 if (dist < radius + other.width/2) {
-                                     this.applyDamage(other, finalDmg * 0.7, isCrit, b.damageType, this.gameState.playerWorldPos, b.ailmentChance);
-                                 }
-                             }
-                        }
-
                         // --- ELECTRO SPHERE LOGIC ---
                         if (b.damageType === 'lightning' && b.owner === 'player') {
                              // 1. Visual Pulse
@@ -2366,24 +2356,22 @@ export class GameEngine {
                 this.callbacks.onNotification(`Skill Evolved!`);
                 this.recalculateStats(); 
             }
-            
-            // Resume Game Loop
-            this.gameState.level += 1;
-            this.gameState.xp -= this.gameState.nextLevelXp;
-            this.gameState.nextLevelXp = Math.floor(150 * Math.pow(1.25, this.gameState.level - 1));
-            this.gameState.isPaused = false;
-            this.gameState.lastFrameTime = performance.now();
-            this.saveGame();
-            this.updateHud();
-            return;
-        } 
-        
-        if (upgrade.gemItem) {
+        } else if (upgrade.skillLevelUp) { // New Block: Handle Skill Level Up
+            const { skillIndex } = upgrade.skillLevelUp;
+            const skill = this.gameState.activeSkills[skillIndex];
+            if (skill && skill.activeGem) {
+                skill.level += 1;
+                const def = SKILL_DATABASE[skill.activeGem.gemDefinitionId!];
+                this.callbacks.onNotification(`${def.name} Upgraded to Lv.${skill.level}!`);
+                this.recalculateStats();
+            }
+        } else if (upgrade.gemItem) {
             const gemDef = SKILL_DATABASE[upgrade.gemItem.gemDefinitionId!];
             if (gemDef.type === 'active') {
                 const emptyIndex = this.gameState.activeSkills.findIndex(s => s.activeGem === null);
                 if (emptyIndex !== -1) {
                     this.gameState.activeSkills[emptyIndex].activeGem = upgrade.gemItem;
+                    this.gameState.activeSkills[emptyIndex].level = 1; // Ensure new skill is Level 1
                     this.gameState.activeSkills[emptyIndex].cooldownTimer = 0;
                     this.callbacks.onNotification(`Learned ${gemDef.name}!`);
                 } else {
@@ -2423,8 +2411,78 @@ export class GameEngine {
 
     private triggerLevelUp() {
         this.gameState.isPaused = true;
+        // CORRECTED: Pass the full activeSkills array so generateRewards can inspect levels
         const options = generateRewards(this.gameState.level, this.gameState.activeSkills);
         this.callbacks.onLevelUp(options);
+    }
+
+    private loadGame(): GameState | null {
+        try {
+            const raw = localStorage.getItem(SAVE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            
+            // --- 兼容性修复 ---
+            if (!parsed.currentFloor) parsed.currentFloor = 0;
+            if (parsed.gold === undefined) parsed.gold = 0;
+            if (!parsed.npcs) parsed.npcs = [];
+            if (!parsed.groundEffects) parsed.groundEffects = [];
+            if (!parsed.particles) parsed.particles = [];
+            if (!parsed.xpOrbs) parsed.xpOrbs = [];
+            
+            // 关键修复：给旧存档的技能补上 level 属性
+            if (parsed.activeSkills) {
+                parsed.activeSkills.forEach((skill: any) => {
+                    // 如果存在技能宝石但没有等级，初始化为 1
+                    if (skill.activeGem && (skill.level === undefined || skill.level === null)) {
+                        skill.level = 1;
+                    }
+                    // 确保空槽位也有 level 字段
+                    if (skill.level === undefined) {
+                        skill.level = 1;
+                    }
+                });
+            }
+            // -----------------
+            
+            // Re-inject NPCs if in hideout
+            if (parsed.worldState === 'HIDEOUT') {
+                const merchant: NPC = {
+                    id: 888,
+                    active: true,
+                    type: 'merchant',
+                    name: "Merchant",
+                    x: 160,
+                    y: 80,
+                    width: 50,
+                    height: 50,
+                    color: '#22c55e',
+                    interactionRadius: 80
+                };
+                parsed.npcs = [merchant];
+                // Ensure Map Device
+                const hasDevice = parsed.interactables.some((i: Interactable) => i.type === 'map_device');
+                if (!hasDevice) {
+                    parsed.interactables.push({
+                        id: 999,
+                        active: true,
+                        type: 'map_device',
+                        x: 0,
+                        y: -280,
+                        width: 80,
+                        height: 80,
+                        color: '#c026d3',
+                        interactionRadius: 100,
+                        label: 'Map Device'
+                    });
+                }
+            }
+
+            return parsed as GameState;
+        } catch (e) {
+            console.error("Failed to load save", e);
+            return null;
+        }
     }
 
     private gainXp(amount: number) {

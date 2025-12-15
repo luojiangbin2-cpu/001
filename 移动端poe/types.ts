@@ -72,14 +72,14 @@ export interface SkillStats {
     orbit: number; // 0 = disabled, 1 = enabled
 }
 
-export interface EvolutionDefinition {
+export interface SkillEvolution {
     id: string;
     name: string;
     description: string;
+    statModifiers?: Partial<SkillStats>;
     addTags?: SkillTag[];
     removeTags?: SkillTag[];
     visualTag?: string;
-    statModifiers?: Partial<SkillStats>;
 }
 
 export interface SkillDefinition {
@@ -91,7 +91,7 @@ export interface SkillDefinition {
     description: string;
     baseStats: Partial<SkillStats>;
     statMultipliers?: Partial<SkillStats>;
-    evolutions?: EvolutionDefinition[];
+    evolutions?: SkillEvolution[];
 }
 
 export interface ResolvedSkill {
@@ -107,6 +107,7 @@ export interface ActiveSkillInstance {
     supportGems: (ItemInstance | null)[];
     cooldownTimer: number;
     evolutionId?: string;
+    level: number; // New: Skill Level
 }
 
 export interface UpgradeDefinition {
@@ -120,6 +121,7 @@ export interface UpgradeDefinition {
     tags?: SkillTag[];
     gemItem?: ItemInstance;
     evolution?: { skillIndex: number; evolutionId: string };
+    skillLevelUp?: { skillIndex: number }; // New: Skill Level Up Action
 }
 
 export interface AffixDefinition {

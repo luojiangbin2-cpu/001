@@ -1,5 +1,5 @@
 
-import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag } from "./types";
+import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag, SkillEvolution } from "./types";
 import { StatsSystem } from "./StatsSystem";
 
 // --- SKILL DATABASE ---
@@ -34,8 +34,7 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
                 id: 'flame_gatling',
                 name: "Flame Gatling",
                 description: "Fires projectiles rapidly in a line. No spread.",
-                // Using additive logic: +2.0 rate to base 1.5 = 3.5. -6 damage to base 15 = 9.
-                statModifiers: { attackRate: 2.0, damage: -6, projectileSpread: 0, projectileCount: 0 }
+                statModifiers: { attackRate: 2.0, damage: 0.6, projectileSpread: 0, projectileCount: 0 }
             }
         ]
     },
@@ -238,14 +237,18 @@ export class SkillManager {
                     activeVisualTag = evo.visualTag;
                 }
 
-                // Apply Stat Modifiers (Additive)
+                // Apply Stat Modifiers
                 if (evo.statModifiers) {
-                    for (const key in evo.statModifiers) {
-                        const k = key as keyof SkillStats;
-                        if (evo.statModifiers[k] !== undefined) {
-                            finalStats[k] += evo.statModifiers[k]!;
-                        }
-                    }
+                    // Logic: Additive by default, unless specified as multiplier (damage, attackRate) or override (spread)
+                    if (evo.statModifiers.areaOfEffect) finalStats.areaOfEffect = (finalStats.areaOfEffect || 0) + evo.statModifiers.areaOfEffect;
+                    if (evo.statModifiers.attackRate) finalStats.attackRate *= evo.statModifiers.attackRate; // Multiplier
+                    if (evo.statModifiers.damage) finalStats.damage *= evo.statModifiers.damage; // Multiplier
+                    if (evo.statModifiers.projectileSpread !== undefined) finalStats.projectileSpread = evo.statModifiers.projectileSpread;
+                    
+                    // Handle others (Additive)
+                    if (evo.statModifiers.projectileCount !== undefined) finalStats.projectileCount += evo.statModifiers.projectileCount;
+                    if (evo.statModifiers.range !== undefined) finalStats.range += evo.statModifiers.range;
+                    if (evo.statModifiers.projectileSpeed !== undefined) finalStats.projectileSpeed += evo.statModifiers.projectileSpeed;
                 }
             }
         }
@@ -293,7 +296,11 @@ export class SkillManager {
         // Damage Calculation
         const playerGlobalDmg = playerStats.getStatValue('bulletDamage', activeTags);
         const playerDmgRatio = playerGlobalDmg / 10; 
-        finalStats.damage *= playerDmgRatio;
+        
+        // Skill Level Multiplier (15% per level above 1)
+        const levelMultiplier = 1 + (instance.level - 1) * 0.15;
+        
+        finalStats.damage *= playerDmgRatio * levelMultiplier;
 
         const playerAtkSpdRatio = playerStats.getStatValue('attackSpeed', activeTags); 
         finalStats.attackRate *= playerAtkSpdRatio;

@@ -429,26 +429,18 @@ export const createSpecificItem = (slot: ItemSlot, affixId: string): ItemInstanc
 
 export const generateRewards = (level: number, activeSkills: ActiveSkillInstance[]): UpgradeDefinition[] => {
     const rewards: UpgradeDefinition[] = [];
-    const generatedIds = new Set<string>(); // Tracks stat.id or gemId to prevent duplicates in this batch
+    const generatedIds = new Set<string>(); // Tracks generated keys to avoid dupes in one batch
     
-    // 1. Extract owned Skill IDs
-    const excludedActiveGemIds = activeSkills
-        .filter(s => s.activeGem)
-        .map(s => s.activeGem!.gemDefinitionId!);
+    // 1. Get current active skills context
+    const activeSlots = activeSkills
+        .map((s, index) => ({ skill: s, index }))
+        .filter(s => s.skill.activeGem !== null);
 
-    // 2. Find all "Evolvable" skill slots
-    const evolvableSlots = activeSkills.map((skill, index) => {
-        if (!skill.activeGem) return null;
-        const def = SKILL_DATABASE[skill.activeGem.gemDefinitionId!];
-        // Must have def, have evolutions, and not already evolved
-        if (!def || !def.evolutions || def.evolutions.length === 0) return null;
-        if (skill.evolutionId) return null; 
-        return { index, def };
-    }).filter(item => item !== null);
+    // Get owned IDs to filter from new pool
+    const excludedActiveGemIds = activeSlots.map(s => s.skill.activeGem!.gemDefinitionId!);
     
     const allSkillKeys = Object.keys(SKILL_DATABASE);
-    
-    // Separate pools
+    // New skill pool: exclude owned
     const activeSkillPool = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'active' && !excludedActiveGemIds.includes(k));
     const supportSkills = allSkillKeys.filter(k => SKILL_DATABASE[k].type === 'support');
 
@@ -457,73 +449,84 @@ export const generateRewards = (level: number, activeSkills: ActiveSkillInstance
         safetyCounter++;
         const roll = Math.random();
         
-        let selection: 'stat' | 'active' | 'support' | 'evolution' = 'stat';
+        // Probability Weights:
+        // 40% Upgrade Existing Skill (Level Up / Evolve)
+        // 30% Stat Upgrade
+        // 30% New Skill/Support
         
-        // Random selection logic
-        if (evolvableSlots.length > 0 && roll < 0.15) { 
-             selection = 'evolution'; // 15% Chance for Evolution
-        } else if (roll < 0.45) { 
-             selection = 'stat';
-        } else if (roll < 0.75) { 
-             selection = 'active';
-        } else { 
-             selection = 'support'; 
-        }
+        let selection: 'upgrade_existing' | 'stat' | 'new_gem' = 'stat';
         
-        // Handle empty pools fallback
-        if (selection === 'active' && activeSkillPool.length === 0) selection = 'support';
-        if (selection === 'support' && supportSkills.length === 0) selection = 'stat';
-        if (selection === 'evolution' && evolvableSlots.length === 0) selection = 'stat';
+        if (activeSlots.length > 0 && roll < 0.4) selection = 'upgrade_existing';
+        else if (roll < 0.7) selection = 'stat';
+        else selection = 'new_gem';
 
-        if (selection === 'evolution') {
-            const slot = evolvableSlots[Math.floor(Math.random() * evolvableSlots.length)]!;
-            const evo = slot.def.evolutions![Math.floor(Math.random() * slot.def.evolutions!.length)];
-            
-            const uniqueKey = `evo_${slot.def.id}_${evo.id}`;
-            if (!generatedIds.has(uniqueKey)) {
-                generatedIds.add(uniqueKey);
-                rewards.push({
-                    id: uniqueKey,
-                    name: `EVOLUTION: ${evo.name}`,
-                    description: `${slot.def.name}: ${evo.description}`,
-                    color: 'bg-gradient-to-br from-purple-600 to-blue-600',
-                    evolution: { skillIndex: slot.index, evolutionId: evo.id }
-                });
+        // --- Logic A: Upgrade Existing Skill ---
+        if (selection === 'upgrade_existing') {
+            const slotInfo = activeSlots[Math.floor(Math.random() * activeSlots.length)];
+            const { skill, index } = slotInfo;
+            const def = SKILL_DATABASE[skill.activeGem!.gemDefinitionId!];
+
+            // Level 1-3 -> Level Up Option
+            if (skill.level < 4) {
+                const nextLevel = skill.level + 1;
+                const uniqueKey = `levelup_${def.id}_${nextLevel}`;
+                if (!generatedIds.has(uniqueKey)) {
+                    generatedIds.add(uniqueKey);
+                    rewards.push({
+                        id: uniqueKey,
+                        name: `Level Up: ${def.name}`,
+                        description: `To Level ${nextLevel} (+15% Dmg)`,
+                        color: 'bg-cyan-700', // Deep Cyan
+                        skillLevelUp: { skillIndex: index }
+                    });
+                }
+            } 
+            // Level >= 4, Not Evolved, Has Evolutions -> Evolution Option
+            else if (skill.level >= 4 && !skill.evolutionId && def.evolutions && def.evolutions.length > 0) {
+                const evo = def.evolutions[Math.floor(Math.random() * def.evolutions.length)];
+                const uniqueKey = `evo_${def.id}_${evo.id}`;
+                
+                if (!generatedIds.has(uniqueKey)) {
+                    generatedIds.add(uniqueKey);
+                    rewards.push({
+                        id: uniqueKey,
+                        name: `Evolve: ${evo.name}`,
+                        description: `Mutation: ${evo.description}`,
+                        color: 'bg-gradient-to-br from-purple-600 to-amber-500', // Legendary
+                        evolution: { skillIndex: index, evolutionId: evo.id }
+                    });
+                }
+            } else {
+                // Fallback if maxed and evolved
+                selection = 'stat';
             }
         }
-        else if (selection === 'stat') {
+
+        // --- Logic B: Stat Upgrade ---
+        if (selection === 'stat') {
             const stat = STAT_UPGRADES[Math.floor(Math.random() * STAT_UPGRADES.length)];
             if (!generatedIds.has(stat.id)) {
                 generatedIds.add(stat.id);
                 rewards.push({ ...stat });
             }
-        } else {
-            // Gem Selection
-            const pool = selection === 'active' ? activeSkillPool : supportSkills;
-            if (pool.length === 0) continue; 
+        } 
+        
+        // --- Logic C: New Skill ---
+        if (selection === 'new_gem') {
+            const pool = (activeSkillPool.length > 0 && Math.random() < 0.5) ? activeSkillPool : supportSkills;
+            
+            if (pool.length === 0) continue;
             
             const gemId = pool[Math.floor(Math.random() * pool.length)];
-            
             if (!generatedIds.has(gemId)) {
                 generatedIds.add(gemId);
-                
                 const def = SKILL_DATABASE[gemId];
                 const item = createGemItem(gemId);
-
-                // Determine Color based on tags
-                let color = def.type === 'active' ? 'bg-blue-600' : 'bg-zinc-600';
-                const tagsToCheck = [...(def.tags || []), ...(def.supportedTags || [])];
                 
-                if (tagsToCheck.includes('fire')) {
-                    color = 'bg-orange-600';
-                } else if (tagsToCheck.includes('projectile')) {
-                    color = 'bg-emerald-600';
-                } else if (tagsToCheck.includes('cold')) {
-                    color = 'bg-cyan-600';
-                }
-
+                let color = def.type === 'active' ? 'bg-blue-600' : 'bg-zinc-600';
+                
                 rewards.push({
-                    id: item.id, 
+                    id: item.id,
                     name: def.name,
                     description: def.description,
                     color: color,
