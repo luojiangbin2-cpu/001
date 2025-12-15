@@ -1,4 +1,5 @@
-import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag } from "./types";
+
+import { ActiveSkillInstance, ResolvedSkill, SkillDefinition, SkillStats, SkillTag, SkillEvolution } from "./types";
 import { StatsSystem } from "./StatsSystem";
 
 // --- SKILL DATABASE ---
@@ -19,7 +20,23 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
             projectileSpread: 0,
             range: 800,
             areaOfEffect: 0
-        }
+        },
+        evolutions: [
+            {
+                id: 'magma_burst',
+                name: "Magma Burst",
+                description: "Fireballs explode on impact. Adds Area tag.",
+                addTags: ['area'],
+                visualTag: 'explosion',
+                statModifiers: { areaOfEffect: 100 }
+            },
+            {
+                id: 'flame_gatling',
+                name: "Flame Gatling",
+                description: "Fires projectiles rapidly in a line. No spread.",
+                statModifiers: { attackRate: 2.0, damage: 0.6, projectileSpread: 0, projectileCount: 0 }
+            }
+        ]
     },
     'cyclone': {
         id: 'cyclone',
@@ -37,19 +54,17 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
     },
     'nova': {
         id: 'nova',
-        name: 'Blizzard',
+        name: 'Ice Nova',
         type: 'active',
-        tags: ['area', 'cold'], 
-        description: 'Summons ice shards to strike random enemies nearby. 100% Chill.',
+        tags: ['area', 'projectile', 'cold'], 
+        description: 'Explodes projectiles in a circle.',
         baseStats: {
-            damage: 30,
-            attackRate: 0.8,
-            projectileCount: 5,
-            projectileSpeed: 0,
-            projectileSpread: 0,
-            areaOfEffect: 0,
-            range: 280,
-            ailmentChance: 1.0
+            damage: 20,
+            attackRate: 1.0,
+            projectileCount: 8,
+            projectileSpeed: 400,
+            projectileSpread: 360,
+            areaOfEffect: 0
         }
     },
     'electro_sphere': {
@@ -150,11 +165,10 @@ export const SKILL_DATABASE: Record<string, SkillDefinition> = {
         type: 'support',
         tags: [],
         supportedTags: ['melee', 'projectile'],
-        description: '35% Faster Attack Speed, 50% Less Damage',
+        description: '30% Faster Attack Speed',
         baseStats: {},
         statMultipliers: {
-            attackRate: 1.35,
-            damage: 0.5
+            attackRate: 1.3
         }
     },
     'gmp': {
@@ -210,8 +224,9 @@ export class SkillManager {
     /**
      * Calculates the final stats of a skill by combining:
      * 1. Active Skill Base Stats
-     * 2. Compatible Support Gems (Base + Multipliers)
-     * 3. Player Global Stats (StatsSystem) - FILTERED BY TAGS
+     * 2. Evolution Modifiers (Base + Evo)
+     * 3. Compatible Support Gems (Base + Multipliers)
+     * 4. Player Global Stats (StatsSystem) - FILTERED BY TAGS
      */
     public static resolveSkill(instance: ActiveSkillInstance, playerStats: StatsSystem): ResolvedSkill | null {
         // 0. Check if active gem exists
@@ -237,7 +252,40 @@ export class SkillManager {
             orbit: definition.baseStats.orbit || 0
         };
 
-        const activeTags = definition.tags; // This is the context for StatsSystem
+        // Initialize tags based on definition, can be modified by evolution
+        let activeTags = [...definition.tags];
+        let activeVisualTag = undefined;
+
+        // 1.5. Apply Evolution (If exists)
+        if (instance.evolutionId && definition.evolutions) {
+            const evo = definition.evolutions.find(e => e.id === instance.evolutionId);
+            if (evo) {
+                // Update Tags
+                if (evo.addTags) {
+                    activeTags.push(...evo.addTags);
+                }
+                if (evo.removeTags) {
+                    activeTags = activeTags.filter(t => !evo.removeTags!.includes(t));
+                }
+                if (evo.visualTag) {
+                    activeVisualTag = evo.visualTag;
+                }
+
+                // Apply Stat Modifiers
+                if (evo.statModifiers) {
+                    // Logic: Additive by default, unless specified as multiplier (damage, attackRate) or override (spread)
+                    if (evo.statModifiers.areaOfEffect) finalStats.areaOfEffect = (finalStats.areaOfEffect || 0) + evo.statModifiers.areaOfEffect;
+                    if (evo.statModifiers.attackRate) finalStats.attackRate *= evo.statModifiers.attackRate; // Multiplier
+                    if (evo.statModifiers.damage) finalStats.damage *= evo.statModifiers.damage; // Multiplier
+                    if (evo.statModifiers.projectileSpread !== undefined) finalStats.projectileSpread = evo.statModifiers.projectileSpread;
+                    
+                    // Handle others (Additive)
+                    if (evo.statModifiers.projectileCount !== undefined) finalStats.projectileCount += evo.statModifiers.projectileCount;
+                    if (evo.statModifiers.range !== undefined) finalStats.range += evo.statModifiers.range;
+                    if (evo.statModifiers.projectileSpeed !== undefined) finalStats.projectileSpeed += evo.statModifiers.projectileSpeed;
+                }
+            }
+        }
 
         // 2. Apply Supports
         if (instance.supportGems) {
@@ -247,7 +295,13 @@ export class SkillManager {
                 const supportDef = SKILL_DATABASE[supportGem.gemDefinitionId];
                 if (!supportDef) continue;
 
-                const isCompatible = SkillManager.checkCompatibility(definition.id, supportDef.id);
+                // Check compatibility using the EVOLVED activeTags
+                let isCompatible = false;
+                if (!supportDef.supportedTags || supportDef.supportedTags.length === 0) {
+                    isCompatible = true;
+                } else {
+                    isCompatible = supportDef.supportedTags.some(tag => activeTags.includes(tag));
+                }
                 
                 if (isCompatible) {
                     // Apply Additive Base Stats
@@ -272,39 +326,29 @@ export class SkillManager {
             }
         }
 
-        // 3. Apply Player Global Stats (using the Tag Context)
+        // 3. Apply Player Global Stats (using the Evolved Tag Context)
         
-        // Damage Calculation:
+        // Damage Calculation
         // We use the player's 'bulletDamage' stat as the global scaler for skill damage.
-        // Base value for player bulletDamage is usually 10 (from GameEngine init).
-        // If player has "+50% Projectile Damage" (and skill is Projectile), getStatValue returns ~15.
-        // 15 / 10 = 1.5x Multiplier.
         const playerGlobalDmg = playerStats.getStatValue('bulletDamage', activeTags);
         const playerDmgRatio = playerGlobalDmg / 10; 
-        finalStats.damage *= playerDmgRatio;
+        
+        // Skill Level Multiplier (15% per level above 1)
+        const levelMultiplier = 1 + (instance.level - 1) * 0.15;
+        
+        finalStats.damage *= playerDmgRatio * levelMultiplier;
 
-        // --- 攻速平衡逻辑 Start (New) ---
-        // 1. 获取玩家的总攻速倍率（例如 1.5 代表 +50% 攻速）
+        // --- 攻速平衡逻辑 Start ---
         const playerAtkSpdRatio = playerStats.getStatValue('attackSpeed', activeTags);
-
-        // 2. 计算出“额外增加的部分”（例如 1.5 -> 0.5）
         const bonusAtkSpd = Math.max(0, playerAtkSpdRatio - 1);
-
-        // 3. 默认攻速收益系数为 1.0 (100%收益)
         let speedEffectiveness = 1.0;
-
-        // 4. 平衡规则：如果技能带有 'area' 标签且不是 'melee' (近战)
-        // 我们将其视为“大范围法术”，强制将其攻速收益减半 (0.5)，防止后期卡顿和数值崩坏。
         if (activeTags.includes('area') && !activeTags.includes('melee')) {
             speedEffectiveness = 0.5;
         }
-
-        // 5. 应用修正后的公式：基础攻速 * (1 + 额外攻速 * 收益系数)
         finalStats.attackRate *= (1 + bonusAtkSpd * speedEffectiveness);
         // --- 攻速平衡逻辑 End ---
 
         // Projectile Count: Additive
-        // If stats says "1" (base), we add 0 extra. If stats says "2" (base 1 + 1 extra), we add 1.
         const playerProjCount = playerStats.getStatValue('projectileCount', activeTags); 
         finalStats.projectileCount += (playerProjCount - 1);
         
@@ -317,7 +361,8 @@ export class SkillManager {
         return {
             definition: definition,
             stats: finalStats,
-            tags: definition.tags
+            tags: activeTags,
+            visualTag: activeVisualTag
         };
     }
 }

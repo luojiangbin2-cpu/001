@@ -83,7 +83,8 @@ function createEmptySkillSlot(id: number): ActiveSkillInstance {
         instanceId: `skill_${id}`,
         activeGem: null,
         supportGems: [null, null, null],
-        cooldownTimer: 0
+        cooldownTimer: 0,
+        level: 1
     };
 }
 
@@ -2353,7 +2354,25 @@ export class GameEngine {
                     this.callbacks.onNotification(`Stashed ${gemDef.name} (No Active Skills)`);
                 }
             }
-        } else {
+        } 
+        else if (upgrade.skillLevelUp) {
+            const idx = upgrade.skillLevelUp.skillIndex;
+            if (this.gameState.activeSkills[idx]) {
+                this.gameState.activeSkills[idx].level += 1;
+                const gemName = this.gameState.activeSkills[idx].activeGem?.name || 'Skill';
+                this.callbacks.onNotification(`${gemName} Level Up! (Lvl ${this.gameState.activeSkills[idx].level})`);
+            }
+        }
+        else if (upgrade.evolution) {
+            const idx = upgrade.evolution.skillIndex;
+            const evoId = upgrade.evolution.evolutionId;
+            if (this.gameState.activeSkills[idx]) {
+                this.gameState.activeSkills[idx].evolutionId = evoId;
+                const gemName = this.gameState.activeSkills[idx].activeGem?.name || 'Skill';
+                this.callbacks.onNotification(`${gemName} Evolved!`);
+            }
+        }
+        else {
             this.chosenUpgrades.push(upgrade);
             if (upgrade.stat === 'maxHp' && upgrade.value) {
                 this.currentHp += upgrade.value; 
@@ -2375,24 +2394,8 @@ export class GameEngine {
 
     private triggerLevelUp() {
         this.gameState.isPaused = true;
-        const ownedActiveGemIds: string[] = [];
-        
-        this.gameState.activeSkills.forEach(s => {
-            if (s.activeGem && s.activeGem.gemDefinitionId) {
-                ownedActiveGemIds.push(s.activeGem.gemDefinitionId);
-            }
-        });
-
-        this.gameState.gemInventory.forEach(item => {
-            if (item.gemDefinitionId) {
-                const def = SKILL_DATABASE[item.gemDefinitionId];
-                if (def && def.type === 'active') {
-                    ownedActiveGemIds.push(item.gemDefinitionId);
-                }
-            }
-        });
-
-        const options = generateRewards(this.gameState.level, ownedActiveGemIds);
+        // Pass actual active skills for upgrade context logic
+        const options = generateRewards(this.gameState.level, this.gameState.activeSkills);
         this.callbacks.onLevelUp(options);
     }
 
